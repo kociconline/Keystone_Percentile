@@ -1,10 +1,12 @@
 ## Interface: 120100, 120105
 ## Title: M+ Percentile
-## Notes: Shows your Mythic+ rating as "Top X%" overall, by role, class and spec.
+## Notes: Mythic+ "Top X%" for your rating (overall, role, class, spec) and your DPS in every key.
 ## Author: You
 ## Version: @project-version@
-## SavedVariables: MPP_DB
+## SavedVariables: MPP_DB, MPP_RUNS
 ## IconTexture: Interface\Icons\Achievement_ChallengeMode_Gold
 
 Data.lua
 Core.lua
+Runs.lua
+History.lua

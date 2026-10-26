@@ -17,6 +17,8 @@ jobs:
       WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
       WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
       GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+      WCL_CLIENT_ID: ${{ secrets.WCL_CLIENT_ID }}
+      WCL_CLIENT_SECRET: ${{ secrets.WCL_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -26,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Download fresh ladder data
-        run: python tools/update_data.py --regions us,eu,kr,tw
+      - name: Download Raider.IO and Warcraft Logs data
+        run: python tools/update_data.py --regions us,eu,kr,tw --wcl-budget 3200
 
       - uses: BigWigsMods/packager@v2

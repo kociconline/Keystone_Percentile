@@ -1,6 +1,6 @@
 -- M+ Percentile: "Top X%" for your Mythic+ rating, like chess.com.
 -- Shows overall, role, class and spec percentiles from Raider.IO data.
-local ADDON = ...
+local ADDON, ns = ...
 
 local REGION_KEYS = { [1] = "us", [2] = "kr", [3] = "eu", [4] = "tw", [5] = "cn" }
 local ROLE_KEYS = { DAMAGER = "dps", HEALER = "healer", TANK = "tank" }
@@ -11,9 +11,9 @@ local STALE_SECONDS = 7 * 24 * 3600
 -- Helpers
 ---------------------------------------------------------------------------
 local function Key(name, realm)
-  local s = (name or "") .. "-" .. (realm or "")
-  s = s:gsub("[%s']", "")
-  return s:lower()
+  local n = (name or ""):gsub("%s", "")
+  local r = (realm or ""):gsub("[%s'%-%(%)]", "")
+  return (n .. "-" .. r):lower()
 end
 
 local function IsSecret(v)
@@ -60,6 +60,8 @@ local function Num(n)
   return BreakUpLargeNumbers and BreakUpLargeNumbers(n) or tostring(n)
 end
 
+ns.Key, ns.IsSecret, ns.FormatPct, ns.PctColor, ns.Num = Key, IsSecret, FormatPct, PctColor, Num
+
 ---------------------------------------------------------------------------
 -- Player identity: role, class, spec, hero talent
 ---------------------------------------------------------------------------
@@ -84,6 +86,7 @@ local function GetPlayerIdentity()
   id.hero = GetHeroTalentName()
   return id
 end
+ns.GetPlayerIdentity = GetPlayerIdentity
 
 ---------------------------------------------------------------------------
 -- Percentile maths
@@ -220,7 +223,12 @@ local function RowStrings(i)
 end
 
 panel:SetScript("OnDragStart", function(self)
+  self.dragged = true
   if not MPP_DB.locked then self:StartMoving() end
+end)
+panel:SetScript("OnMouseDown", function(self) self.dragged = false end)
+panel:SetScript("OnMouseUp", function(self, button)
+  if button == "LeftButton" and not self.dragged and ns.ToggleHistory then ns.ToggleHistory() end
 end)
 panel:SetScript("OnDragStop", function(self)
   self:StopMovingOrSizing()
@@ -247,7 +255,7 @@ panel:SetScript("OnEnter", function(self)
   GameTooltip:AddLine(" ")
   GameTooltip:AddLine("|cff00ff96#rank|r = exact from Raider.IO, ~#rank = estimate", 0.6, 0.6, 0.6, true)
   GameTooltip:AddLine("Data: " .. (MPP_DATA.updatedAt or "never"), 0.6, 0.6, 0.6)
-  GameTooltip:AddLine("Drag to move. Type /mpp for options.", 0.6, 0.6, 0.6)
+  GameTooltip:AddLine("Click for run history. Drag to move.", 0.6, 0.6, 0.6)
   GameTooltip:Show()
 end)
 panel:SetScript("OnLeave", GameTooltip_Hide)
@@ -376,6 +384,13 @@ SlashCmdList.MPLUSPERCENTILE = function(msg)
   elseif cmd == "tooltips" then
     MPP_DB.tooltips = not MPP_DB.tooltips
     print(tag .. "tooltips " .. (MPP_DB.tooltips and "on" or "off"))
+  elseif cmd == "runs" or cmd == "history" then
+    ns.ToggleHistory()
+  elseif cmd == "last" then
+    ns.ShowLastRun()
+  elseif cmd == "popup" then
+    MPP_DB.popup = (MPP_DB.popup == false)
+    print(tag .. "end-of-key pop-up " .. (MPP_DB.popup and "on" or "off"))
   elseif cmd == "region" then
     MPP_DB.region = (arg ~= "" and arg ~= "auto") and arg or nil
     print(tag .. "region = " .. (GetRegion() or "?"))
@@ -387,6 +402,6 @@ SlashCmdList.MPLUSPERCENTILE = function(msg)
     for _, row in ipairs(rows) do
       print(string.format("  %s: %s  %s", row[1], PctText(row[2]), RankText(row[2], row[3])))
     end
-    print("|cff888888/mpp show, hide, lock, reset, tooltips, region <us/eu/kr/tw/auto>|r")
+    print("|cff888888/mpp runs, last, show, hide, lock, reset, tooltips, popup, region <us/eu/kr/tw/auto>|r")
   end
 end

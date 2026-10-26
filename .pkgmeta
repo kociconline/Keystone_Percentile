@@ -7,4 +7,6 @@ ignore:
   - README.md
   - CURSEFORGE.md
   - tools/characters.json
+  - tools/wcl_key.json
+  - tools/cache
   - tools/__pycache__
