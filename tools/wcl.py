@@ -67,6 +67,10 @@ def load_credentials(folders=None):
     return None, None
 
 
+class RateLimited(RuntimeError):
+    """The Warcraft Logs key has no points left this hour."""
+
+
 class WCL:
     def __init__(self, client_id, client_secret, point_budget=None):
         auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
@@ -92,13 +96,25 @@ class WCL:
             except urllib.error.HTTPError as e:
                 if e.code == 429:
                     self.out_of_points = True
-                    raise RuntimeError("Warcraft Logs rate limit reached")
+                    raise RateLimited("Warcraft Logs rate limit reached")
                 if attempt == 2:
                     raise
                 time.sleep(3)
         if data.get("errors"):
-            raise RuntimeError(data["errors"][0].get("message", "GraphQL error"))
+            msg = data["errors"][0].get("message", "GraphQL error")
+            if "points" in msg.lower() or "rate limit" in msg.lower():
+                self.out_of_points = True
+                raise RateLimited("Warcraft Logs rate limit reached")
+            raise RuntimeError(msg)
         return data["data"]
+
+    def reset_minutes(self):
+        """Minutes until this key's hourly points refill, or None if unknown."""
+        try:
+            d = self.query("{ rateLimitData { pointsResetIn } }")["rateLimitData"]
+            return max(1, round(d["pointsResetIn"] / 60))
+        except Exception:
+            return None
 
     def points(self):
         d = self.query("{ rateLimitData { limitPerHour pointsSpentThisHour pointsResetIn } }")["rateLimitData"]
@@ -171,12 +187,17 @@ def row_spec(r):
 # --------------------------------------------------------------------------
 # 1. Your characters' ranked runs
 # --------------------------------------------------------------------------
-def import_character_runs(api, char, zones, dungeon_map):
-    """char: {"region","realm","name"}  ->  list of run dicts for Data.lua."""
-    runs = []
+def import_character_runs(api, char, zones, dungeon_map, cache=None):
+    """char: {"region","realm","name"} -> list of run dicts for the addon.
+    cache: {zone_id: [runs]} for this character, updated in place. Finished
+    (frozen) seasons already in the cache are not fetched again. Raises
+    RateLimited when the key runs out of points; the cache keeps what was
+    fetched so far."""
+    cache = cache if cache is not None else {}
     slug = char["realm"].lower().replace(" ", "-").replace("'", "")
     for z in zones:
-        if not z["encounters"]:
+        zid = str(z["id"])
+        if not z["encounters"] or (z.get("frozen") and zid in cache):
             continue
         fields = "\n".join(
             f'd{e["id"]}: encounterRankings(encounterID: {e["id"]}, metric: dps)\n'
@@ -185,21 +206,21 @@ def import_character_runs(api, char, zones, dungeon_map):
             character(name:$n, serverSlug:$s, serverRegion:$r) {{ {fields} }} }} }}"""
         try:
             data = api.query(q, {"n": char["name"], "s": slug, "r": char["region"].upper()})
+        except RateLimited:
+            raise
         except RuntimeError as e:
-            if "rate limit" in str(e):
-                raise
             print(f"    {z['name']}: skipped ({e})")
             continue
         ch = (data.get("characterData") or {}).get("character")
         if not ch:
             print(f"    {char['name']}: not found on Warcraft Logs")
-            return runs
-        found = 0
+            break
+        zone_runs = []
         for e in z["encounters"]:
             by_run = {}
             for metric, alias in (("dps", "d"), ("hps", "h")):
                 ranks = (ch.get(f'{alias}{e["id"]}') or {}).get("ranks") or []
-                if ranks and found == 0:
+                if ranks and not zone_runs and not by_run:
                     log_debug(f"{metric} rank row ({e['name']})", ranks[0])
                 for r in ranks:
                     amount, t = row_amount(r), row_time_ms(r)
@@ -211,7 +232,8 @@ def import_character_runs(api, char, zones, dungeon_map):
                     if not run:
                         run = by_run[key] = {
                             "t": t // 1000,
-                            "season": z["name"],
+                            "zid": z["id"],
+                            "season": f'{z["name"]} ({z["expansion"]})' if z.get("expansion") else z["name"],
                             "dungeon": e["name"],
                             "map": dungeon_map.get(norm(e["name"])),
                             "level": row_level(r),
@@ -225,10 +247,12 @@ def import_character_runs(api, char, zones, dungeon_map):
                         run["dps"], run["pct"] = round(amount, 1), pct
                     else:
                         run["hps"], run["hpct"] = round(amount, 1), pct
-            runs.extend(by_run.values())
-            found += len(by_run)
-        if found:
-            print(f"    {z['name']}: {found} ranked runs")
+            zone_runs.extend(by_run.values())
+        cache[zid] = zone_runs
+        if zone_runs:
+            label = f'{z["name"]} ({z["expansion"]})' if z.get("expansion") else z["name"]
+            print(f"    {label}: {len(zone_runs)} ranked runs")
+    runs = [r for zr in cache.values() for r in zr]
     runs.sort(key=lambda x: x["t"])
     return runs
 

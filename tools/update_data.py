@@ -202,15 +202,25 @@ def is_example(entries):
     return any("YourMain" in json.dumps(c) or "YOUR-REALM" in json.dumps(c) for c in entries)
 
 
-def import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, season_name):
-    imported, priority = {}, set()
+def import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, season_name, cache):
+    """cache: {char_key: {zone_id: [runs]}}, updated in place. Returns
+    (imported, priority, rate_limited)."""
+    imported, priority, limited = {}, set(), False
     for c in char_list:
-        print(f"  Importing runs for {c['name']}...")
-        runs = wcl.import_character_runs(api, c, zones, dungeon_map)
         key = char_key(c["name"], c["realm"])
+        char_cache = cache.setdefault(key, {})
+        if limited:
+            runs = sorted((r for zr in char_cache.values() for r in zr), key=lambda x: x["t"])
+        else:
+            print(f"  Importing runs for {c['name']}...")
+            try:
+                runs = wcl.import_character_runs(api, c, zones, dungeon_map, char_cache)
+            except wcl.RateLimited:
+                limited = True
+                runs = sorted((r for zr in char_cache.values() for r in zr), key=lambda x: x["t"])
         cls = (chars.get(key) or {}).get("class")
         for run in runs:
-            if zone and run["season"] == zone["name"]:
+            if zone and run.get("zid") == zone["id"]:
                 run["season"] = season_name  # same label as live runs
             if cls:
                 run["className"] = cls
@@ -227,7 +237,7 @@ def import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, sea
         if runs:
             imported[key] = runs
         print(f"    {len(runs)} runs total")
-    return imported, priority
+    return imported, priority, limited
 
 
 def main():
@@ -329,31 +339,49 @@ def main():
 
     imported, dps = {}, {}
     cache_file = os.path.join(PERSONAL_DIR, "benchmarks_cache.json")
+    runs_cache_file = os.path.join(PERSONAL_DIR, "runs_cache.json")
+    runs_cache = json.load(open(runs_cache_file, encoding="utf-8")) if os.path.exists(runs_cache_file) else {}
+    if os.path.exists(cache_file):
+        raw = json.load(open(cache_file, encoding="utf-8"))
+        dps = {int(m): {int(sp): {int(l): v for l, v in lv.items()} for sp, lv in spd.items()}
+               for m, spd in raw.items()}
     cid, sec = wcl.load_credentials([PERSONAL_DIR, HERE])
     if a.no_wcl:
         pass
     elif not (cid and sec):
         print(f"Warcraft Logs: add your API key to {os.path.join(PERSONAL_DIR, 'wcl_key.json')} to import your runs.")
     else:
+        api, limited = None, False
         try:
             api = wcl.WCL(cid, sec, point_budget=a.wcl_budget)
+            if api.budget_left() < 20:
+                raise wcl.RateLimited("no points left")
             zones = wcl.mythic_plus_zones(api)
             zone = wcl.current_zone(zones)
             print(f"Warcraft Logs: current zone {zone['name'] if zone else '?'}")
-            imported, priority = import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, name)
-            if zone and priority and not a.no_benchmarks:
-                cached = {}
-                if os.path.exists(cache_file):
-                    raw = json.load(open(cache_file, encoding="utf-8"))
-                    cached = {int(m): {int(s): {int(l): v for l, v in lv.items()} for s, lv in sp.items()}
-                              for m, sp in raw.items()}
+            imported, priority, limited = import_wcl(api, char_list, chars, zones, zone, dungeon_map,
+                                                     spec_labels, name, runs_cache)
+            if zone and priority and not a.no_benchmarks and not limited:
                 levels = sorted({lv for _, _, lv in priority})
                 print(f"  Benchmarks for your {len(priority)} dungeon/spec/level combinations...")
-                dps = wcl.fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, cached,
+                dps = wcl.fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, dps,
                                            priority, only_priority=True)
-                json.dump(dps, open(cache_file, "w", encoding="utf-8"), separators=(",", ":"))
+        except wcl.RateLimited:
+            limited = True
         except Exception as e:
             print(f"Warcraft Logs: stopped ({e}). Keeping what was fetched.")
+        if limited:
+            wait = api.reset_minutes() if api else None
+            print("Warcraft Logs: this API key has used up its points for the hour"
+                  + (f"; they refill in about {wait} minutes." if wait else ".")
+                  + " Everything fetched so far is saved; run this again later to continue.")
+            if not imported:
+                for key, zones_cached in runs_cache.items():
+                    runs = sorted((r for zr in zones_cached.values() for r in zr), key=lambda x: x["t"])
+                    if runs:
+                        imported[key] = runs
+        json.dump(runs_cache, open(runs_cache_file, "w", encoding="utf-8"), separators=(",", ":"))
+        json.dump(dps, open(cache_file, "w", encoding="utf-8"), separators=(",", ":"))
 
     data = dict(stamp, characters=chars, imported=imported, dps=dps)
     out = os.path.join(PERSONAL_DIR, "Personal.lua")
