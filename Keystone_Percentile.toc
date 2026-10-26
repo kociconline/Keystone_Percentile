@@ -1,7 +1,7 @@
 ## Interface: 120100, 120105
 ## Title: Keystone Percentile
 ## Notes: Mythic+ "Top X%" for your rating (overall, role, class, spec) and your DPS in every key.
-## Author: You
+## Author: kociconline
 ## Version: @project-version@
 ## SavedVariables: KP_DB, KP_RUNS
 ## IconTexture: Interface\Icons\Achievement_ChallengeMode_Gold
