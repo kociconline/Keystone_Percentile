@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local L = ns.L
 
-local W, ROW_H, VISIBLE = 600, 22, 14
+local W, ROW_H, VISIBLE = 640, 22, 14
 local COLS = { -- x offset, width, justify
   date = { 10, 52, "LEFT" }, dungeon = { 66, 190, "LEFT" }, result = { 260, 54, "LEFT" },
   dps = { 316, 66, "RIGHT" }, rank = { 392, 84, "LEFT" }, bar = { 480, 96 },
@@ -46,7 +46,7 @@ local function NewView(key, label, refresh)
   views[key] = v
   local b = CreateFrame("Button", nil, win, "BackdropTemplate")
   b:SetSize(84, 20)
-  b:SetPoint("TOPLEFT", 150 + (#tabs) * 88, -10)
+  b:SetPoint("TOPLEFT", 205 + (#tabs) * 88, -10)
   b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
   b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   b.text:SetPoint("CENTER"); b.text:SetText(label)
@@ -125,7 +125,7 @@ win.empty:SetWidth(W - 60)
 
 win.footer = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 win.footer:SetPoint("BOTTOMLEFT", 12, 10)
-win.footer:SetText(L["Click a run to open its summary · ★ best run per dungeon · ~ estimated rank"])
+win.footer:SetText(L["Click a run to open its summary · |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12|t best run per dungeon · ~ estimated rank"])
 
 local rows = {}
 local function GetRow(i)
@@ -266,7 +266,7 @@ function Refresh()
     row.dungeon:SetText(string.format("%s +%s", ns.DungeonName(r), r.level or "?"))
     row.result:SetText(ResultText(r))
     row.dps:SetText(ns.FormatDPS(r._ev.amount) .. (r._ev.metric == "hps" and " |cff888888H|r" or ""))
-    local star = (best[ns.DungeonName(r)] == r) and " |cffffd100★|r" or ""
+    local star = (best[ns.DungeonName(r)] == r) and " |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12|t" or ""
     row.rank:SetText(ns.TopText(r._ev) .. star)
     if r._ev.ofTop then
       row.barBG:Show(); row.bar:Show()

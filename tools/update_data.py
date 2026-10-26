@@ -153,14 +153,92 @@ def lua(v, ind=0):
     raise TypeError(type(v))
 
 
+PERSONAL_NAME = "Keystone_Percentile_Personal"
+PERSONAL_DIR = os.path.normpath(os.path.join(HERE, "..", "..", PERSONAL_NAME))
+
+
+def interface_line():
+    toc = os.path.join(HERE, "..", "Keystone_Percentile.toc")
+    if os.path.exists(toc):
+        for line in open(toc, encoding="utf-8"):
+            if line.startswith("## Interface:"):
+                return line.strip()
+    return "## Interface: 120100"
+
+
+def setup_personal_dir():
+    """Create the personal folder (a tiny addon WowUp never touches) and move
+    any old settings files from tools/ into it."""
+    os.makedirs(PERSONAL_DIR, exist_ok=True)
+    toc = os.path.join(PERSONAL_DIR, PERSONAL_NAME + ".toc")
+    with open(toc, "w", encoding="utf-8") as f:
+        f.write(interface_line() + "\n"
+                "## Title: Keystone Percentile (your data)\n"
+                "## Notes: Your imported Warcraft Logs runs and exact ranks. Made by Keystone Percentile's update script.\n"
+                "## Dependencies: Keystone_Percentile\n\n"
+                "Personal.lua\n")
+    for fname, example in (("characters.json", "characters.example.json"), ("wcl_key.json", "wcl_key.example.json")):
+        target = os.path.join(PERSONAL_DIR, fname)
+        old = os.path.join(HERE, fname)
+        if not os.path.exists(target) and os.path.exists(old):
+            import shutil
+            shutil.copyfile(old, target)
+            print(f"  Moved {fname} to {PERSONAL_DIR}")
+        if not os.path.exists(target):
+            src = os.path.join(HERE, example)
+            if os.path.exists(src):
+                import shutil
+                shutil.copyfile(src, target)
+                print(f"  Created {target}: edit it, then run this script again.")
+
+
+def write_lua(path, var, data, header):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(header + "\n")
+        f.write(var + " = " + lua(data) + "\n")
+
+
+def is_example(entries):
+    return any("YourMain" in json.dumps(c) or "YOUR-REALM" in json.dumps(c) for c in entries)
+
+
+def import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, season_name):
+    imported, priority = {}, set()
+    for c in char_list:
+        print(f"  Importing runs for {c['name']}...")
+        runs = wcl.import_character_runs(api, c, zones, dungeon_map)
+        key = char_key(c["name"], c["realm"])
+        cls = (chars.get(key) or {}).get("class")
+        for run in runs:
+            if zone and run["season"] == zone["name"]:
+                run["season"] = season_name  # same label as live runs
+            if cls:
+                run["className"] = cls
+                run["classFile"] = cls.upper().replace(" ", "")
+            if run.get("spec") and cls:
+                want = wcl.norm(run["spec"] + cls)
+                for sid, label in spec_labels.items():
+                    if wcl.norm(label) == want:
+                        run["specID"] = sid
+                        run["role"] = wcl.role_for_spec(sid)
+                        break
+            if run.get("map") and run.get("level") and run.get("specID"):
+                priority.add((run["map"], run["specID"], run["level"]))
+        if runs:
+            imported[key] = runs
+        print(f"    {len(runs)} runs total")
+    return imported, priority
+
+
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description="Update Keystone Percentile data.")
+    ap.add_argument("--full", action="store_true",
+                    help="build the shared Data.lua for releases (used by GitHub); default is your personal data only")
     ap.add_argument("--season")
-    ap.add_argument("--regions", default=",".join(ALL_REGIONS), help="e.g. eu or us,eu")
-    ap.add_argument("--chars", default=os.path.join(HERE, "characters.json"))
+    ap.add_argument("--regions", default=",".join(ALL_REGIONS), help="--full only: e.g. us,eu")
     ap.add_argument("--no-wcl", action="store_true", help="skip Warcraft Logs")
-    ap.add_argument("--no-benchmarks", action="store_true", help="import your runs only (no DPS/HPS benchmarks)")
-    ap.add_argument("--levels", default="10-20", help="key levels to benchmark, e.g. 10-20 or 12,14,16")
+    ap.add_argument("--no-benchmarks", action="store_true", help="don't fetch DPS/HPS benchmarks")
+    ap.add_argument("--levels", default="10-20", help="--full only: key levels to benchmark")
     ap.add_argument("--wcl-budget", type=int, default=2500, help="max Warcraft Logs points to spend")
     ap.add_argument("--debug", action="store_true")
     a = ap.parse_args()
@@ -172,100 +250,116 @@ def main():
     dungeons = {d["challenge_mode_id"]: d["name"] for d in season.get("dungeons", [])
                 if d.get("challenge_mode_id")}
     dungeon_map = {wcl.norm(n): i for i, n in dungeons.items()}
+    now = datetime.datetime.now(datetime.timezone.utc)
+    stamp = {"season": name, "updatedAt": now.strftime("%Y-%m-%d %H:%M UTC"), "updatedEpoch": int(now.timestamp())}
 
-    # ---------------- Raider.IO ----------------
-    regions, spec_labels = {}, {}
-    for r in [x.strip().lower() for x in a.regions.split(",") if x.strip()]:
-        cohorts, updated = {}, None
-        for cat in CATEGORIES:
+    if a.full:
+        # ---------------- Shared release data ----------------
+        regions, spec_labels = {}, {}
+        for r in [x.strip().lower() for x in a.regions.split(",") if x.strip()]:
+            cohorts, updated = {}, None
+            for cat in CATEGORIES:
+                try:
+                    got, updated = fetch_cohorts(slug, r, cat)
+                    cohorts.update(got)
+                except Exception as e:
+                    print(f"  {r.upper()} {cat}: failed ({e})")
+                time.sleep(0.5)
+            if cohorts:
+                regions[r] = {"cohorts": cohorts, "sourceUpdated": updated}
+                for k, c in cohorts.items():
+                    if k.startswith("spec:") and c.get("label"):
+                        spec_labels[int(k[5:])] = c["label"]
+                ov = cohorts.get("overall")
+                extra = (f"top 1% = {ov['cutoffs'][1]['score']:.0f}, {ov['pop']:,} players"
+                         if ov and len(ov["cutoffs"]) > 1 else "")
+                print(f"  {r.upper()}: {len(cohorts)} groups  {extra}")
+        if not regions:
+            sys.exit("No cutoff data received. Keeping the existing Data.lua.")
+
+        benchmarks = load_cache()
+        cid, sec = wcl.load_credentials()
+        if not a.no_wcl and not a.no_benchmarks and cid and sec:
             try:
-                got, updated = fetch_cohorts(slug, r, cat)
-                cohorts.update(got)
+                api = wcl.WCL(cid, sec, point_budget=a.wcl_budget)
+                zone = wcl.current_zone(wcl.mythic_plus_zones(api))
+                if zone and dungeon_map and spec_labels:
+                    print(f"  Benchmarks for key levels {a.levels} (budget {a.wcl_budget} points)...")
+                    benchmarks = wcl.fetch_benchmarks(api, zone, dungeon_map, spec_labels,
+                                                      parse_levels(a.levels), benchmarks)
+                    save_cache(benchmarks)
             except Exception as e:
-                print(f"  {r.upper()} {cat}: failed ({e})")
-            time.sleep(0.5)
-        if cohorts:
-            regions[r] = {"cohorts": cohorts, "sourceUpdated": updated}
-            for k, c in cohorts.items():
-                if k.startswith("spec:") and c.get("label"):
-                    spec_labels[int(k[5:])] = c["label"]
-            ov = cohorts.get("overall")
-            extra = (f"top 1% = {ov['cutoffs'][1]['score']:.0f}, {ov['pop']:,} players"
-                     if ov and len(ov["cutoffs"]) > 1 else "")
-            print(f"  {r.upper()}: {len(cohorts)} groups  {extra}")
+                print(f"Warcraft Logs: stopped ({e}). Keeping what was fetched.")
+        elif not a.no_wcl:
+            print("Warcraft Logs: no API key, skipping benchmarks.")
 
-    if not regions:
-        sys.exit("No cutoff data received. Keeping the existing Data.lua.")
+        data = dict(stamp, version=3, regions=regions, dungeons=dungeons, dps=benchmarks,
+                    characters={}, imported={})
+        write_lua(OUT, "KP_DATA", data, "-- AUTO-GENERATED by tools/update_data.py --full. Do not edit by hand.")
+        nb = sum(len(lv) for sp in benchmarks.values() for lv in sp.values())
+        print(f"Wrote {os.path.normpath(OUT)} ({nb} DPS benchmarks).")
+        return
 
-    char_list = json.load(open(a.chars, encoding="utf-8")) if os.path.exists(a.chars) else []
+    # ---------------- Personal data (default) ----------------
+    print(f"Your data folder: {PERSONAL_DIR}")
+    setup_personal_dir()
+    chars_file = os.path.join(PERSONAL_DIR, "characters.json")
+    char_list = json.load(open(chars_file, encoding="utf-8-sig")) if os.path.exists(chars_file) else []
+    if not char_list or is_example(char_list):
+        sys.exit(f"Add your characters to {chars_file} first, then run this again.")
+
+    # Spec names (for matching Warcraft Logs runs) from your own region.
+    spec_labels = {}
+    region0 = char_list[0]["region"].lower()
+    try:
+        got, _ = fetch_cohorts(slug, region0, "specs")
+        spec_labels = {int(k[5:]): c["label"] for k, c in got.items() if k.startswith("spec:") and c.get("label")}
+    except Exception as e:
+        print(f"  Spec list failed ({e}); runs will import without spec matching.")
+
     chars = {}
     for c in char_list:
         try:
             k, v = fetch_char(c)
             chars[k] = v
-            print(f"  {c['name']}: #{v['ranks'].get('overall')} overall in {c['region'].upper()}")
+            print(f"  {c['name']}: Raider.IO #{v['ranks'].get('overall')} overall in {c['region'].upper()}")
         except Exception as e:
             print(f"  {c.get('name')}: Raider.IO lookup failed ({e})")
         time.sleep(0.5)
 
-    # ---------------- Warcraft Logs ----------------
-    benchmarks = load_cache()
-    imported = {}
-    cid, sec = wcl.load_credentials()
+    imported, dps = {}, {}
+    cache_file = os.path.join(PERSONAL_DIR, "benchmarks_cache.json")
+    cid, sec = wcl.load_credentials([PERSONAL_DIR, HERE])
     if a.no_wcl:
         pass
     elif not (cid and sec):
-        print("Warcraft Logs: no API key found (see tools/wcl.py). Skipping DPS data.")
+        print(f"Warcraft Logs: add your API key to {os.path.join(PERSONAL_DIR, 'wcl_key.json')} to import your runs.")
     else:
         try:
             api = wcl.WCL(cid, sec, point_budget=a.wcl_budget)
             zones = wcl.mythic_plus_zones(api)
             zone = wcl.current_zone(zones)
             print(f"Warcraft Logs: current zone {zone['name'] if zone else '?'}")
-
-            priority = set()
-            for c in char_list:
-                print(f"  Importing runs for {c['name']}...")
-                runs = wcl.import_character_runs(api, c, zones, dungeon_map)
-                key = char_key(c["name"], c["realm"])
-                cls = (chars.get(key) or {}).get("class")
-                for run in runs:
-                    if zone and run["season"] == zone["name"]:
-                        run["season"] = name  # same label as live runs
-                    if cls:
-                        run["className"] = cls
-                        run["classFile"] = cls.upper().replace(" ", "")
-                    if run.get("spec") and cls:
-                        want = wcl.norm(run["spec"] + cls)
-                        for sid, label in spec_labels.items():
-                            if wcl.norm(label) == want:
-                                run["specID"] = sid
-                                run["role"] = wcl.role_for_spec(sid)
-                                break
-                    if run.get("map") and run.get("level") and run.get("specID"):
-                        priority.add((run["map"], run["specID"], run["level"]))
-                if runs:
-                    imported[key] = runs
-                print(f"    {len(runs)} runs total")
-
-            if zone and not a.no_benchmarks and dungeon_map and spec_labels:
-                print(f"  Benchmarks for key levels {a.levels} (budget {a.wcl_budget} points)...")
-                benchmarks = wcl.fetch_benchmarks(api, zone, dungeon_map, spec_labels,
-                                                  parse_levels(a.levels), benchmarks, priority)
-                save_cache(benchmarks)
+            imported, priority = import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, name)
+            if zone and priority and not a.no_benchmarks:
+                cached = {}
+                if os.path.exists(cache_file):
+                    raw = json.load(open(cache_file, encoding="utf-8"))
+                    cached = {int(m): {int(s): {int(l): v for l, v in lv.items()} for s, lv in sp.items()}
+                              for m, sp in raw.items()}
+                levels = sorted({lv for _, _, lv in priority})
+                print(f"  Benchmarks for your {len(priority)} dungeon/spec/level combinations...")
+                dps = wcl.fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, cached,
+                                           priority, only_priority=True)
+                json.dump(dps, open(cache_file, "w", encoding="utf-8"), separators=(",", ":"))
         except Exception as e:
             print(f"Warcraft Logs: stopped ({e}). Keeping what was fetched.")
 
-    # ---------------- Write Data.lua ----------------
-    now = datetime.datetime.now(datetime.timezone.utc)
-    data = {"version": 3, "season": name, "updatedAt": now.strftime("%Y-%m-%d %H:%M UTC"),
-            "updatedEpoch": int(now.timestamp()), "regions": regions, "characters": chars,
-            "dungeons": dungeons, "dps": benchmarks, "imported": imported}
-    with open(OUT, "w", encoding="utf-8") as f:
-        f.write("-- AUTO-GENERATED by tools/update_data.py. Do not edit by hand.\n")
-        f.write("KP_DATA = " + lua(data) + "\n")
-    nb = sum(len(lv) for sp in benchmarks.values() for lv in sp.values())
-    print(f"Wrote {os.path.normpath(OUT)} ({nb} DPS benchmarks). Type /reload in game to load it.")
+    data = dict(stamp, characters=chars, imported=imported, dps=dps)
+    out = os.path.join(PERSONAL_DIR, "Personal.lua")
+    write_lua(out, "KP_PERSONAL", data, "-- Your Keystone Percentile data. Made by tools/update_data.py.")
+    n = sum(len(v) for v in imported.values())
+    print(f"Wrote {out} ({n} imported runs). Type /reload in game to load it.")
 
 
 if __name__ == "__main__":

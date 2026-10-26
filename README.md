@@ -53,29 +53,27 @@ The interface is in English, German, French and Russian.
 
 ## Install
 
-1. Copy the `Keystone_Percentile` folder to `World of Warcraft/_retail_/Interface/AddOns/`.
-2. Type `/reload` in game. With a CurseForge release you're done.
+**With WowUp:** Get Addons > Install from URL > `https://github.com/kociconline/Keystone_Percentile`. WowUp then shows updates like any other addon.
 
-### Optional: import your Warcraft Logs runs and exact ranks
+**By hand:** download the latest release zip from GitHub and unzip it into `World of Warcraft/_retail_/Interface/AddOns/`.
 
-Needs Python 3.
+Every release already contains fresh rating cutoffs for all regions and Warcraft Logs DPS benchmarks, so the addon works right away.
 
-1. Copy `tools/characters.example.json` to `tools/characters.json` and list your characters.
-2. Create a free API client at https://www.warcraftlogs.com/api/clients (any name, any redirect URL, e.g. `http://localhost`). Copy `tools/wcl_key.example.json` to `tools/wcl_key.json` and paste the client ID and secret.
-3. Run:
+### Optional: your Warcraft Logs runs and exact ranks
+
+Needs Python 3 (on Windows: `winget install -e --id Python.Python.3.12`).
+
+1. Open a terminal in the addon folder (`AddOns/Keystone_Percentile`) and run:
    ```
-   python tools/update_data.py --regions eu
+   py tools/update_data.py
    ```
-   It imports every ranked run of your characters from every season, then fetches benchmarks for your own dungeons, specs and levels first.
-4. Type `/reload` in game.
+   The first run creates a second folder next to the addon, `AddOns/Keystone_Percentile_Personal`, with two settings files. Updates from WowUp never touch that folder.
+2. In `Keystone_Percentile_Personal/characters.json`, list your characters: region, realm as in its Raider.IO URL (e.g. `twisting-nether`), and name.
+3. Create a free API client at https://www.warcraftlogs.com/api/clients (any name, redirect URL `http://localhost`, "Public Client" unticked). Paste its ID and secret into `Keystone_Percentile_Personal/wcl_key.json`.
+4. Run `py tools/update_data.py` again. It imports every ranked run of your characters from every season, your exact Raider.IO ranks, and DPS benchmarks for the dungeons, specs and levels you play.
+5. Type `/reload` in game. "Keystone Percentile (your data)" appears as its own entry in the AddOns list; keep it enabled.
 
-Rerun after uploading new logs. Useful options:
-
-- `--levels 12-18`: key levels to benchmark (default `10-20`)
-- `--no-benchmarks`: import your runs only
-- `--debug`: print raw API samples if something looks wrong
-
-Warcraft Logs limits free keys to a number of points per hour. The script stops when the budget runs out and continues next time, refreshing the oldest benchmarks first. A full first pass over every spec, dungeon and level takes a few runs; after that, each refresh is cheap.
+Rerun after uploading new logs. Options: `--no-benchmarks` (runs only), `--debug` (print raw API samples). `--full` builds the shared release data and is used by GitHub.
 
 ## Commands
 
@@ -98,7 +96,7 @@ Warcraft Logs limits free keys to a number of points per hour. The script stops 
 
 Releases are built by the BigWigs packager on GitHub Actions:
 
-- `daily-data.yml` runs every day at 08:23 UTC. If the data changed, it commits the new `Data.lua` and benchmark cache, tags `vX.Y.Z-data.YYYYMMDD` and uploads to every site.
+- `daily-data.yml` runs every day at 08:23 UTC. If the data changed, it commits the new `Data.lua` and benchmark cache, tags `vX.Y.Z-data.YYYYMMDD` and publishes a release (GitHub, plus CurseForge and others once their IDs and tokens are set).
 - `release.yml` runs when you push a version tag yourself (for example `v4.1.0`) after changing code.
 
 One-time setup:

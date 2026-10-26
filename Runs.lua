@@ -164,9 +164,16 @@ end
 -- Benchmarks and ranking
 ---------------------------------------------------------------------------
 -- Benchmark for this dungeon/spec/level, or the nearest level within 3.
+local function BenchTable(source, map, specID)
+  local t = source and source.dps and map and source.dps[map]
+  return t and specID and t[specID]
+end
+
 function ns.Benchmark(map, specID, level)
-  local t = KP_DATA.dps and map and KP_DATA.dps[map]
-  t = t and specID and t[specID]
+  -- Your personal benchmarks (fetched for your own dungeons) win over the shared ones.
+  local mine = BenchTable(KP_PERSONAL, map, specID)
+  if mine and level and mine[level] then return mine[level], level end
+  local t = BenchTable(KP_DATA, map, specID) or mine
   if not t or not level then return nil end
   if t[level] then return t[level], level end
   for d = 1, 3 do
@@ -256,7 +263,8 @@ end
 function ns.AllRuns(key)
   key = key or MyKey()
   local out, used = {}, {}
-  local imported = (KP_DATA.imported and KP_DATA.imported[key]) or {}
+  local imported = (KP_PERSONAL and KP_PERSONAL.imported and KP_PERSONAL.imported[key])
+    or (KP_DATA.imported and KP_DATA.imported[key]) or {}
   for _, live in ipairs(ns.LiveRuns(key)) do
     local r = {}
     for k, v in pairs(live) do r[k] = v end

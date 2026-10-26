@@ -53,14 +53,17 @@ def norm(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
-def load_credentials():
+def load_credentials(folders=None):
     cid, sec = os.environ.get("WCL_CLIENT_ID"), os.environ.get("WCL_CLIENT_SECRET")
     if cid and sec:
         return cid, sec
-    path = os.path.join(HERE, "wcl_key.json")
-    if os.path.exists(path):
-        d = json.load(open(path, encoding="utf-8"))
-        return d.get("client_id"), d.get("client_secret")
+    for folder in folders or [HERE]:
+        path = os.path.join(folder, "wcl_key.json")
+        if os.path.exists(path):
+            d = json.load(open(path, encoding="utf-8-sig"))
+            cid, sec = d.get("client_id"), d.get("client_secret")
+            if cid and sec and "paste" not in cid:
+                return cid, sec
     return None, None
 
 
@@ -336,7 +339,7 @@ def benchmark_one(api, enc_id, cls, spec, level, old=None, metric="dps"):
 
 
 def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, priority=None,
-                     reserve=200, max_age_days=3):
+                     reserve=200, max_age_days=3, only_priority=False):
     """
     Refresh as many (dungeon, spec, level) benchmarks as the point budget allows.
     existing:  previous KP_DATA.dps table, kept for anything not refreshed.
@@ -360,6 +363,8 @@ def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, prio
                 if old and age < max_age_days * 86400:
                     continue
                 pri = 0 if priority and (map_id, spec_id, lv) in priority else 1
+                if only_priority and pri:
+                    continue
                 jobs.append((pri, (old or {}).get("u", 0), map_id, spec_id, lv, e["id"], cls, spec))
     jobs.sort()
     done = 0

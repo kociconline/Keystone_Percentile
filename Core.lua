@@ -145,7 +145,7 @@ end
 
 -- Stored Raider.IO ranks only count while your live score still matches them.
 local function ExactChar(name, realm, score)
-  local chars = KP_DATA and KP_DATA.characters
+  local chars = (KP_PERSONAL and KP_PERSONAL.characters) or (KP_DATA and KP_DATA.characters)
   local c = chars and chars[Key(name, realm)]
   if c and c.score and math.abs(c.score - score) < 1 then return c end
 end

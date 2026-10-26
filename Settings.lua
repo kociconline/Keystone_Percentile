@@ -97,9 +97,11 @@ page:SetScript("OnShow", function()
   for _, cb in ipairs(checks) do cb:SetChecked(cb.get() and true or false) end
   regionBtn:SetText(RegionText())
   local nb = 0
-  for _, sp in pairs(KP_DATA.dps or {}) do for _, lv in pairs(sp) do for _ in pairs(lv) do nb = nb + 1 end end end
+  for _, src in ipairs({ KP_DATA, KP_PERSONAL or {} }) do
+    for _, sp in pairs(src.dps or {}) do for _, lv in pairs(sp) do for _ in pairs(lv) do nb = nb + 1 end end end
+  end
   local imported = 0
-  for _, list in pairs(KP_DATA.imported or {}) do imported = imported + #list end
+  for _, list in pairs((KP_PERSONAL and KP_PERSONAL.imported) or KP_DATA.imported or {}) do imported = imported + #list end
   info:SetText(string.format(L["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /kp, /kp runs, /kp progress, /kp next, /kp last"],
     KP_DATA.season or "?", KP_DATA.updatedAt or L["never"], nb, imported))
 end)

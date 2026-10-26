@@ -31,7 +31,7 @@ jobs:
           python-version: '3.12'
 
       - name: Download Raider.IO and Warcraft Logs data
-        run: python tools/update_data.py --regions us,eu,kr,tw --wcl-budget 3200
+        run: python tools/update_data.py --full --regions us,eu,kr,tw --wcl-budget 3200
 
       - name: Commit and tag if the data changed
         id: tag
