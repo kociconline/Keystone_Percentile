@@ -209,15 +209,16 @@ def import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, sea
     for c in char_list:
         key = char_key(c["name"], c["realm"])
         char_cache = cache.setdefault(key, {})
+        wanted = {str(z["id"]) for z in zones}
         if limited:
-            runs = sorted((r for zr in char_cache.values() for r in zr), key=lambda x: x["t"])
+            runs = sorted((r for zid, zr in char_cache.items() if zid in wanted for r in zr), key=lambda x: x["t"])
         else:
             print(f"  Importing runs for {c['name']}...")
             try:
                 runs = wcl.import_character_runs(api, c, zones, dungeon_map, char_cache)
             except wcl.RateLimited:
                 limited = True
-                runs = sorted((r for zr in char_cache.values() for r in zr), key=lambda x: x["t"])
+                runs = sorted((r for zid, zr in char_cache.items() if zid in wanted for r in zr), key=lambda x: x["t"])
         cls = (chars.get(key) or {}).get("class")
         for run in runs:
             if zone and run.get("zid") == zone["id"]:
@@ -248,6 +249,7 @@ def main():
     ap.add_argument("--regions", default=",".join(ALL_REGIONS), help="--full only: e.g. us,eu")
     ap.add_argument("--no-wcl", action="store_true", help="skip Warcraft Logs")
     ap.add_argument("--no-benchmarks", action="store_true", help="don't fetch DPS/HPS benchmarks")
+    ap.add_argument("--all-seasons", action="store_true", help="also import your runs from past seasons")
     ap.add_argument("--levels", default="10-20", help="--full only: key levels to benchmark")
     ap.add_argument("--wcl-budget", type=int, default=2500, help="max Warcraft Logs points to spend")
     ap.add_argument("--debug", action="store_true")
@@ -359,7 +361,9 @@ def main():
             zones = wcl.mythic_plus_zones(api)
             zone = wcl.current_zone(zones)
             print(f"Warcraft Logs: current zone {zone['name'] if zone else '?'}")
-            imported, priority, limited = import_wcl(api, char_list, chars, zones, zone, dungeon_map,
+            # Only the current season unless asked for more.
+            import_zones = zones if a.all_seasons else ([zone] if zone else [])
+            imported, priority, limited = import_wcl(api, char_list, chars, import_zones, zone, dungeon_map,
                                                      spec_labels, name, runs_cache)
             if zone and priority and not a.no_benchmarks and not limited:
                 levels = sorted({lv for _, _, lv in priority})
@@ -376,7 +380,9 @@ def main():
                   + (f"; they refill in about {wait} minutes." if wait else ".")
                   + " Everything fetched so far is saved; run this again later to continue.")
             if not imported:
+                keep = None if a.all_seasons else {str(zone["id"])} if zone else set()
                 for key, zones_cached in runs_cache.items():
+                    zones_cached = {z: r for z, r in zones_cached.items() if keep is None or z in keep}
                     runs = sorted((r for zr in zones_cached.values() for r in zr), key=lambda x: x["t"])
                     if runs:
                         imported[key] = runs

@@ -70,10 +70,10 @@ Needs Python 3 (on Windows: `winget install -e --id Python.Python.3.12`).
    The first run creates a second folder next to the addon, `AddOns/Keystone_Percentile_Personal`, with two settings files. Updates from WowUp never touch that folder.
 2. In `Keystone_Percentile_Personal/characters.json`, list your characters: region, realm as in its Raider.IO URL (e.g. `twisting-nether`), and name.
 3. Create a free API client at https://www.warcraftlogs.com/api/clients (any name, redirect URL `http://localhost`, "Public Client" unticked). Paste its ID and secret into `Keystone_Percentile_Personal/wcl_key.json`.
-4. Run `py tools/update_data.py` again. It imports every ranked run of your characters from every season, your exact Raider.IO ranks, and DPS benchmarks for the dungeons, specs and levels you play.
+4. Run `py tools/update_data.py` again. It imports every ranked run of your characters from the current season (add `--all-seasons` for past seasons too), your exact Raider.IO ranks, and DPS benchmarks for the dungeons, specs and levels you play.
 5. Type `/reload` in game. "Keystone Percentile (your data)" appears as its own entry in the AddOns list; keep it enabled.
 
-Rerun after uploading new logs. The first import fetches every past season once; later runs only fetch the current season. Warcraft Logs limits each API key to a number of points per hour: if it runs out, the script says when to try again and keeps everything fetched so far. Use a separate API client for GitHub's daily job, so your own imports don't share its budget. Options: `--no-benchmarks` (runs only), `--debug` (print raw API samples). `--full` builds the shared release data and is used by GitHub.
+Rerun after uploading new logs. With `--all-seasons`, past seasons are fetched once and then reused. Warcraft Logs limits each API key to a number of points per hour: if it runs out, the script says when to try again and keeps everything fetched so far. Use a separate API client for GitHub's daily job, so your own imports don't share its budget. Options: `--no-benchmarks` (runs only), `--debug` (print raw API samples). `--full` builds the shared release data and is used by GitHub.
 
 ## Commands
 

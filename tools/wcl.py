@@ -252,7 +252,8 @@ def import_character_runs(api, char, zones, dungeon_map, cache=None):
         if zone_runs:
             label = f'{z["name"]} ({z["expansion"]})' if z.get("expansion") else z["name"]
             print(f"    {label}: {len(zone_runs)} ranked runs")
-    runs = [r for zr in cache.values() for r in zr]
+    wanted = {str(z["id"]) for z in zones}
+    runs = [r for zid, zr in cache.items() if zid in wanted for r in zr]
     runs.sort(key=lambda x: x["t"])
     return runs
 
