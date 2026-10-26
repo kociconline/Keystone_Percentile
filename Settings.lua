@@ -18,7 +18,7 @@ title:SetPoint("TOPLEFT", 16, -16)
 title:SetText("Keystone Percentile")
 local sub = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-sub:SetText(L["Where your Mythic+ rating and DPS rank, chess.com style."])
+sub:SetText(L["Where your Mythic+ rating and DPS rank."])
 
 local y = -70
 local checks = {}

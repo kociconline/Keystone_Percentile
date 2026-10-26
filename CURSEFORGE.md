@@ -1,6 +1,6 @@
 # Keystone Percentile
 
-**See where you rank in Mythic+, chess.com style:** your rating as "Top X%" overall, by role, by class and by spec, plus how your DPS ranks in every key you run.
+**See where you rank in Mythic+:** your rating as "Top X%" overall, by role, by class and by spec, plus how your DPS ranks in every key you run.
 
 ## Rating percentiles
 

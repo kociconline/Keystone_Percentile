@@ -1,4 +1,4 @@
--- Keystone Percentile: "Top X%" for your Mythic+ rating, like chess.com.
+-- Keystone Percentile: "Top X%" for your Mythic+ rating and DPS.
 -- Shows overall, role, class and spec percentiles from Raider.IO data.
 local ADDON, ns = ...
 local L = ns.L

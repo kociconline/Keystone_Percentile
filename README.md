@@ -1,6 +1,6 @@
 # Keystone Percentile
 
-Two things, chess.com style:
+Two things:
 
 1. **Where your Mythic+ rating ranks**: Top X% overall, for your role, your class and your spec.
 2. **How your DPS ranks in every key** (HPS for healers): a pop-up when the key ends, and a history of all your runs, compared with Warcraft Logs players of the same spec in the same dungeon and key level.
