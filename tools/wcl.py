@@ -80,7 +80,7 @@ class WCL:
         body = json.dumps({"query": q, "variables": variables or {}}).encode()
         req = urllib.request.Request(API_URL, data=body, headers={
             "Authorization": f"Bearer {self.token}", "Content-Type": "application/json",
-            "User-Agent": "MPlusPercentile-updater/3.0"})
+            "User-Agent": "KeystonePercentile-updater/3.0"})
         for attempt in range(3):
             try:
                 with urllib.request.urlopen(req, timeout=120) as r:
@@ -339,7 +339,7 @@ def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, prio
                      reserve=200, max_age_days=3):
     """
     Refresh as many (dungeon, spec, level) benchmarks as the point budget allows.
-    existing:  previous MPP_DATA.dps table, kept for anything not refreshed.
+    existing:  previous KP_DATA.dps table, kept for anything not refreshed.
     priority:  set of (mapID, specID, level) to do first (your own runs).
     Stale entries are refreshed oldest-first, so coverage fills in over a few days.
     """

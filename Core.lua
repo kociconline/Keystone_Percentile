@@ -1,4 +1,4 @@
--- M+ Percentile: "Top X%" for your Mythic+ rating, like chess.com.
+-- Keystone Percentile: "Top X%" for your Mythic+ rating, like chess.com.
 -- Shows overall, role, class and spec percentiles from Raider.IO data.
 local ADDON, ns = ...
 local L = ns.L
@@ -22,7 +22,7 @@ local function IsSecret(v)
 end
 
 local function GetRegion()
-  if MPP_DB and MPP_DB.region then return MPP_DB.region end
+  if KP_DB and KP_DB.region then return KP_DB.region end
   return REGION_KEYS[GetCurrentRegion and GetCurrentRegion() or 0]
 end
 
@@ -96,7 +96,7 @@ ns.GetPlayerIdentity = GetPlayerIdentity
 -- of the ladder far better than a straight line.
 ---------------------------------------------------------------------------
 local function Cohort(region, key)
-  local r = MPP_DATA and MPP_DATA.regions and MPP_DATA.regions[region]
+  local r = KP_DATA and KP_DATA.regions and KP_DATA.regions[region]
   local c = r and r.cohorts and r.cohorts[key]
   if c and c.cutoffs and #c.cutoffs > 0 then return c end
 end
@@ -145,7 +145,7 @@ end
 
 -- Stored Raider.IO ranks only count while your live score still matches them.
 local function ExactChar(name, realm, score)
-  local chars = MPP_DATA and MPP_DATA.characters
+  local chars = KP_DATA and KP_DATA.characters
   local c = chars and chars[Key(name, realm)]
   if c and c.score and math.abs(c.score - score) < 1 then return c end
 end
@@ -195,7 +195,7 @@ end
 ---------------------------------------------------------------------------
 -- On-screen panel
 ---------------------------------------------------------------------------
-local panel = CreateFrame("Frame", "MPlusPercentilePanel", UIParent, "BackdropTemplate")
+local panel = CreateFrame("Frame", "KeystonePercentilePanel", UIParent, "BackdropTemplate")
 panel:SetSize(240, 100)
 panel:SetFrameStrata("MEDIUM")
 panel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
@@ -227,7 +227,7 @@ end
 
 panel:SetScript("OnDragStart", function(self)
   self.dragged = true
-  if not MPP_DB.locked then self:StartMoving() end
+  if not KP_DB.locked then self:StartMoving() end
 end)
 panel:SetScript("OnMouseDown", function(self) self.dragged = false end)
 panel:SetScript("OnMouseUp", function(self, button)
@@ -236,14 +236,14 @@ end)
 panel:SetScript("OnDragStop", function(self)
   self:StopMovingOrSizing()
   local p, _, rp, x, y = self:GetPoint()
-  MPP_DB.pos = { p, rp, x, y }
+  KP_DB.pos = { p, rp, x, y }
 end)
 
 local lastRows
 panel:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-  GameTooltip:AddLine("M+ Percentile: " .. (GetRegion() or "?"):upper())
-  if MPP_DATA.season then GameTooltip:AddLine(MPP_DATA.season, 0.7, 0.7, 0.7) end
+  GameTooltip:AddLine("Keystone Percentile: " .. (GetRegion() or "?"):upper())
+  if KP_DATA.season then GameTooltip:AddLine(KP_DATA.season, 0.7, 0.7, 0.7) end
   GameTooltip:AddLine(" ")
   GameTooltip:AddLine(L["Next goal per group"], 1, 0.82, 0)
   for _, row in ipairs(lastRows or {}) do
@@ -257,14 +257,14 @@ panel:SetScript("OnEnter", function(self)
   end
   GameTooltip:AddLine(" ")
   GameTooltip:AddLine(L["|cff00ff96#rank|r = exact from Raider.IO, ~#rank = estimate"], 0.6, 0.6, 0.6, true)
-  GameTooltip:AddLine(L["Data:"] .. " " .. (MPP_DATA.updatedAt or L["never"]), 0.6, 0.6, 0.6)
+  GameTooltip:AddLine(L["Data:"] .. " " .. (KP_DATA.updatedAt or L["never"]), 0.6, 0.6, 0.6)
   GameTooltip:AddLine(L["Click for run history. Drag to move."], 0.6, 0.6, 0.6)
   GameTooltip:Show()
 end)
 panel:SetScript("OnLeave", GameTooltip_Hide)
 
 local function RefreshPanel()
-  if not MPP_DB or MPP_DB.hidden then panel:Hide() return end
+  if not KP_DB or KP_DB.hidden then panel:Hide() return end
   local score = GetScore("player")
   if not score then return end
   local rows, region = BuildRows(score)
@@ -296,7 +296,7 @@ local function RefreshPanel()
   local footer
   if not rows[1][2] then
     footer = "|cffff5555" .. string.format(L["No ladder data for %s yet."], (region or "?"):upper()) .. "|r"
-  elseif (MPP_DATA.updatedEpoch or 0) > 0 and GetServerTime() - MPP_DATA.updatedEpoch > STALE_SECONDS then
+  elseif (KP_DATA.updatedEpoch or 0) > 0 and GetServerTime() - KP_DATA.updatedEpoch > STALE_SECONDS then
     footer = "|cffff5555" .. L["Data is over 7 days old."] .. "|r"
   end
   local height = 8 + panel.header:GetStringHeight() + 6 + #rows * ROW_H
@@ -322,7 +322,7 @@ ns.RefreshPanel = RefreshPanel
 -- (works when the client knows their rating, e.g. group members)
 ---------------------------------------------------------------------------
 local function OnUnitTooltip(tooltip)
-  if tooltip ~= GameTooltip or not MPP_DB.tooltips or InCombatLockdown() then return end
+  if tooltip ~= GameTooltip or not KP_DB.tooltips or InCombatLockdown() then return end
   local _, unit = tooltip:GetUnit()
   if not unit or IsSecret(unit) or not UnitIsPlayer(unit) then return end
   local score = GetScore(unit)
@@ -353,9 +353,9 @@ ev:RegisterEvent("TRAIT_CONFIG_UPDATED")
 ev:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" then
     if arg1 ~= ADDON then return end
-    MPP_DB = MPP_DB or {}
-    if MPP_DB.tooltips == nil then MPP_DB.tooltips = true end
-    local pos = MPP_DB.pos
+    KP_DB = KP_DB or {}
+    if KP_DB.tooltips == nil then KP_DB.tooltips = true end
+    local pos = KP_DB.pos
     panel:ClearAllPoints()
     if pos then panel:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
     else panel:SetPoint("TOP", UIParent, "TOP", 0, -120) end
@@ -372,23 +372,24 @@ ev:SetScript("OnEvent", function(_, event, arg1)
   end
 end)
 
-SLASH_MPLUSPERCENTILE1 = "/mpp"
-SlashCmdList.MPLUSPERCENTILE = function(msg)
+SLASH_KEYSTONEPERCENTILE1 = "/kp"
+SLASH_KEYSTONEPERCENTILE2 = "/keystone"
+SlashCmdList.KEYSTONEPERCENTILE = function(msg)
   msg = (msg or ""):lower():match("^%s*(.-)%s*$")
   local cmd, arg = msg:match("^(%S*)%s*(.*)$")
-  local tag = "|cff00ff96M+ Percentile|r: "
+  local tag = "|cff00ff96Keystone Percentile|r: "
   if cmd == "hide" or cmd == "show" then
-    MPP_DB.hidden = (cmd == "hide")
+    KP_DB.hidden = (cmd == "hide")
     RefreshPanel()
   elseif cmd == "lock" then
-    MPP_DB.locked = not MPP_DB.locked
-    print(tag .. "panel " .. (MPP_DB.locked and "locked" or "unlocked"))
+    KP_DB.locked = not KP_DB.locked
+    print(tag .. "panel " .. (KP_DB.locked and "locked" or "unlocked"))
   elseif cmd == "reset" then
-    MPP_DB.pos = nil
+    KP_DB.pos = nil
     panel:ClearAllPoints(); panel:SetPoint("TOP", UIParent, "TOP", 0, -120)
   elseif cmd == "tooltips" then
-    MPP_DB.tooltips = not MPP_DB.tooltips
-    print(tag .. "tooltips " .. (MPP_DB.tooltips and "on" or "off"))
+    KP_DB.tooltips = not KP_DB.tooltips
+    print(tag .. "tooltips " .. (KP_DB.tooltips and "on" or "off"))
   elseif cmd == "config" or cmd == "options" or cmd == "settings" then
     ns.OpenSettings()
   elseif cmd == "progress" then
@@ -400,10 +401,10 @@ SlashCmdList.MPLUSPERCENTILE = function(msg)
   elseif cmd == "last" then
     ns.ShowLastRun()
   elseif cmd == "popup" then
-    MPP_DB.popup = (MPP_DB.popup == false)
-    print(tag .. "end-of-key pop-up " .. (MPP_DB.popup and "on" or "off"))
+    KP_DB.popup = (KP_DB.popup == false)
+    print(tag .. "end-of-key pop-up " .. (KP_DB.popup and "on" or "off"))
   elseif cmd == "region" then
-    MPP_DB.region = (arg ~= "" and arg ~= "auto") and arg or nil
+    KP_DB.region = (arg ~= "" and arg ~= "auto") and arg or nil
     print(tag .. "region = " .. (GetRegion() or "?"))
     RefreshPanel()
   else
@@ -413,6 +414,6 @@ SlashCmdList.MPLUSPERCENTILE = function(msg)
     for _, row in ipairs(rows) do
       print(string.format("  %s: %s  %s", row[1], PctText(row[2]), RankText(row[2], row[3])))
     end
-    print("|cff888888/mpp runs, progress, next, last, config|r")
+    print("|cff888888/kp runs, progress, next, last, config|r")
   end
 end

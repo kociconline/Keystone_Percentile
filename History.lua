@@ -1,4 +1,4 @@
--- M+ Percentile: run history window (/mpp runs, or click the rating panel).
+-- Keystone Percentile: run history window (/kp runs, or click the rating panel).
 local ADDON, ns = ...
 local L = ns.L
 
@@ -15,7 +15,7 @@ local SORT_NAMES = { date = L["Sort: date"], rank = L["Sort: rank"], dps = L["So
 ---------------------------------------------------------------------------
 -- Window
 ---------------------------------------------------------------------------
-local win = CreateFrame("Frame", "MPlusPercentileHistory", UIParent, "BackdropTemplate")
+local win = CreateFrame("Frame", "KeystonePercentileHistory", UIParent, "BackdropTemplate")
 win:SetSize(W, 110 + VISIBLE * ROW_H)
 win:SetPoint("CENTER")
 win:SetFrameStrata("HIGH")
@@ -27,14 +27,14 @@ win:SetClampedToScreen(true)
 win:SetScript("OnDragStart", win.StartMoving)
 win:SetScript("OnDragStop", win.StopMovingOrSizing)
 win:Hide()
-tinsert(UISpecialFrames, "MPlusPercentileHistory")
+tinsert(UISpecialFrames, "KeystonePercentileHistory")
 
 local close = CreateFrame("Button", nil, win, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
 
 win.title = win:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 win.title:SetPoint("TOPLEFT", 12, -12)
-win.title:SetText("M+ Percentile")
+win.title:SetText("Keystone Percentile")
 
 -- Each tab is a view frame filling the window; only one is shown.
 local tabs, views = {}, {}
@@ -58,7 +58,7 @@ end
 ns.NewHistoryView = NewView
 
 function ns.ShowHistoryTab(key)
-  MPP_DB.historyTab = key
+  KP_DB.historyTab = key
   for k, v in pairs(views) do
     if k == key then v:Show(); if v.refresh then v.refresh() end else v:Hide() end
   end
@@ -112,7 +112,7 @@ for _, h in ipairs(headers) do
 end
 
 -- Scrolling list
-local scroll = CreateFrame("ScrollFrame", "MPlusPercentileHistoryScroll", runsView, "UIPanelScrollFrameTemplate")
+local scroll = CreateFrame("ScrollFrame", "KeystonePercentileHistoryScroll", runsView, "UIPanelScrollFrameTemplate")
 scroll:SetPoint("TOPLEFT", 0, -50)
 scroll:SetPoint("BOTTOMRIGHT", -28, 30)
 local content = CreateFrame("Frame", nil, scroll)
@@ -206,7 +206,7 @@ local all = {}
 
 function Refresh()
   all = ns.AllRuns()
-  if state.season == nil and not state.seasonTouched then state.season = MPP_DATA.season end
+  if state.season == nil and not state.seasonTouched then state.season = KP_DATA.season end
 
   local seasons = Options(all, function(r) return r.season end)
   local dungeons = Options(all, function(r) return ns.DungeonName(r) end)
@@ -310,9 +310,9 @@ win.fSort:SetScript("OnClick", function()
 end)
 
 function ns.ToggleHistory(tab)
-  if win:IsShown() and (not tab or tab == MPP_DB.historyTab) then win:Hide() return end
+  if win:IsShown() and (not tab or tab == KP_DB.historyTab) then win:Hide() return end
   win:Show()
-  ns.ShowHistoryTab(tab or MPP_DB.historyTab or "runs")
+  ns.ShowHistoryTab(tab or KP_DB.historyTab or "runs")
 end
 
 -- Keep the window current when a key finishes while it's open.
@@ -320,6 +320,6 @@ local ev = CreateFrame("Frame")
 ev:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 ev:SetScript("OnEvent", function()
   C_Timer.After(5, function()
-    if win:IsShown() then ns.ShowHistoryTab(MPP_DB.historyTab or "runs") end
+    if win:IsShown() then ns.ShowHistoryTab(KP_DB.historyTab or "runs") end
   end)
 end)

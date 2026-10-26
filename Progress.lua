@@ -1,4 +1,4 @@
--- M+ Percentile: rating history graph ("Progress" tab) and next-key
+-- Keystone Percentile: rating history graph ("Progress" tab) and next-key
 -- suggestions ("Next keys" tab).
 local ADDON, ns = ...
 local L = ns.L
@@ -10,10 +10,10 @@ local MAX_SNAPSHOTS = 400
 -- Daily rating snapshots
 ---------------------------------------------------------------------------
 local function History(key)
-  MPP_DB.ratingHistory = MPP_DB.ratingHistory or {}
+  KP_DB.ratingHistory = KP_DB.ratingHistory or {}
   key = key or ns.MyKey()
-  MPP_DB.ratingHistory[key] = MPP_DB.ratingHistory[key] or {}
-  return MPP_DB.ratingHistory[key]
+  KP_DB.ratingHistory[key] = KP_DB.ratingHistory[key] or {}
+  return KP_DB.ratingHistory[key]
 end
 
 -- Overall and spec "Top X%" for a score, for the current player.
@@ -33,7 +33,7 @@ function ns.RecordSnapshot()
   local day = date("%Y-%m-%d", GetServerTime())
   local last = hist[#hist]
   local entry = { d = day, t = GetServerTime(), score = score, top = top, specTop = specTop, specID = id.specID,
-    season = MPP_DATA.season }
+    season = KP_DATA.season }
   if last and last.d == day then hist[#hist] = entry else hist[#hist + 1] = entry end
   while #hist > MAX_SNAPSHOTS do table.remove(hist, 1) end
 end

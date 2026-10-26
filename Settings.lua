@@ -1,4 +1,4 @@
--- M+ Percentile: Options > AddOns page, addon compartment button, and
+-- Keystone Percentile: Options > AddOns page, addon compartment button, and
 -- keeping saved data small.
 local ADDON, ns = ...
 local L = ns.L
@@ -15,7 +15,7 @@ local category
 
 local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 16, -16)
-title:SetText("M+ Percentile")
+title:SetText("Keystone Percentile")
 local sub = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 sub:SetText(L["Where your Mythic+ rating and DPS rank, chess.com style."])
@@ -23,7 +23,7 @@ sub:SetText(L["Where your Mythic+ rating and DPS rank, chess.com style."])
 local y = -70
 local checks = {}
 
--- get/set read and write MPP_DB; onChange runs after a change.
+-- get/set read and write KP_DB; onChange runs after a change.
 local function Check(label, tip, get, set)
   local cb = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
   cb:SetPoint("TOPLEFT", 16, y)
@@ -43,20 +43,20 @@ local function Check(label, tip, get, set)
 end
 
 Check(L["Show rating panel"], L["The small panel with your Top % for overall, role, class and spec."],
-  function() return not MPP_DB.hidden end,
-  function(v) MPP_DB.hidden = not v; ns.RefreshPanel() end)
+  function() return not KP_DB.hidden end,
+  function(v) KP_DB.hidden = not v; ns.RefreshPanel() end)
 Check(L["Lock panel position"], L["Stops the panel from being dragged."],
-  function() return MPP_DB.locked end,
-  function(v) MPP_DB.locked = v end)
+  function() return KP_DB.locked end,
+  function(v) KP_DB.locked = v end)
 Check(L["Show end-of-key pop-up"], L["Your DPS or HPS rank, the gap to the top, and what happened in the key."],
-  function() return MPP_DB.popup ~= false end,
-  function(v) MPP_DB.popup = v end)
+  function() return KP_DB.popup ~= false end,
+  function(v) KP_DB.popup = v end)
 Check(L["Rank your whole group in the pop-up"], L["Every group member against players of their own spec."],
-  function() return MPP_DB.groupRanks ~= false end,
-  function(v) MPP_DB.groupRanks = v end)
+  function() return KP_DB.groupRanks ~= false end,
+  function(v) KP_DB.groupRanks = v end)
 Check(L["Show Top % on player tooltips"], L["Overall and class percentile for players whose rating the game knows."],
-  function() return MPP_DB.tooltips end,
-  function(v) MPP_DB.tooltips = v end)
+  function() return KP_DB.tooltips end,
+  function(v) KP_DB.tooltips = v end)
 
 y = y - 10
 local regionLabel = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -66,12 +66,12 @@ local regionBtn = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
 regionBtn:SetSize(120, 22)
 regionBtn:SetPoint("LEFT", regionLabel, "RIGHT", 12, 0)
 local function RegionText()
-  return MPP_DB.region and MPP_DB.region:upper() or (L["Auto"] .. " (" .. (ns.GetRegion() or "?"):upper() .. ")")
+  return KP_DB.region and KP_DB.region:upper() or (L["Auto"] .. " (" .. (ns.GetRegion() or "?"):upper() .. ")")
 end
 regionBtn:SetScript("OnClick", function(self)
   local idx = 1
-  for i, r in ipairs(REGIONS) do if (r or nil) == MPP_DB.region then idx = i end end
-  MPP_DB.region = REGIONS[idx % #REGIONS + 1] or nil
+  for i, r in ipairs(REGIONS) do if (r or nil) == KP_DB.region then idx = i end end
+  KP_DB.region = REGIONS[idx % #REGIONS + 1] or nil
   self:SetText(RegionText())
   ns.RefreshPanel()
 end)
@@ -86,7 +86,7 @@ local resetBtn = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
 resetBtn:SetSize(150, 22)
 resetBtn:SetPoint("LEFT", historyBtn, "RIGHT", 8, 0)
 resetBtn:SetText(L["Reset panel position"])
-resetBtn:SetScript("OnClick", function() SlashCmdList.MPLUSPERCENTILE("reset") end)
+resetBtn:SetScript("OnClick", function() SlashCmdList.KEYSTONEPERCENTILE("reset") end)
 y = y - 40
 
 local info = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -97,11 +97,11 @@ page:SetScript("OnShow", function()
   for _, cb in ipairs(checks) do cb:SetChecked(cb.get() and true or false) end
   regionBtn:SetText(RegionText())
   local nb = 0
-  for _, sp in pairs(MPP_DATA.dps or {}) do for _, lv in pairs(sp) do for _ in pairs(lv) do nb = nb + 1 end end end
+  for _, sp in pairs(KP_DATA.dps or {}) do for _, lv in pairs(sp) do for _ in pairs(lv) do nb = nb + 1 end end end
   local imported = 0
-  for _, list in pairs(MPP_DATA.imported or {}) do imported = imported + #list end
-  info:SetText(string.format(L["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /mpp, /mpp runs, /mpp progress, /mpp next, /mpp last"],
-    MPP_DATA.season or "?", MPP_DATA.updatedAt or L["never"], nb, imported))
+  for _, list in pairs(KP_DATA.imported or {}) do imported = imported + #list end
+  info:SetText(string.format(L["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /kp, /kp runs, /kp progress, /kp next, /kp last"],
+    KP_DATA.season or "?", KP_DATA.updatedAt or L["never"], nb, imported))
 end)
 
 function ns.OpenSettings()
@@ -113,19 +113,19 @@ end
 ---------------------------------------------------------------------------
 -- Addon compartment (the addon icon dropdown by the minimap)
 ---------------------------------------------------------------------------
-function MPlusPercentile_OnCompartmentClick(_, button)
+function KeystonePercentile_OnCompartmentClick(_, button)
   if button == "RightButton" then ns.OpenSettings() else ns.ToggleHistory() end
 end
 
-function MPlusPercentile_OnCompartmentEnter(_, frame)
+function KeystonePercentile_OnCompartmentEnter(_, frame)
   GameTooltip:SetOwner(frame, "ANCHOR_LEFT")
-  GameTooltip:AddLine("M+ Percentile")
+  GameTooltip:AddLine("Keystone Percentile")
   GameTooltip:AddLine(L["Left-click: run history"], 1, 1, 1)
   GameTooltip:AddLine(L["Right-click: settings"], 1, 1, 1)
   GameTooltip:Show()
 end
 
-function MPlusPercentile_OnCompartmentLeave()
+function KeystonePercentile_OnCompartmentLeave()
   GameTooltip:Hide()
 end
 
@@ -134,8 +134,8 @@ end
 -- records for older ones, and at most MAX_RUNS runs per character.
 ---------------------------------------------------------------------------
 local function Prune()
-  local current = MPP_DATA.season
-  for _, runs in pairs(MPP_RUNS or {}) do
+  local current = KP_DATA.season
+  for _, runs in pairs(KP_RUNS or {}) do
     for _, r in ipairs(runs) do
       if current and r.season and r.season ~= current then
         r.group, r.hero, r.approx = nil, nil, nil
@@ -152,7 +152,7 @@ ev:SetScript("OnEvent", function(self, _, name)
   self:UnregisterEvent("ADDON_LOADED")
   Prune()
   if Settings and Settings.RegisterCanvasLayoutCategory then
-    category = Settings.RegisterCanvasLayoutCategory(page, "M+ Percentile")
+    category = Settings.RegisterCanvasLayoutCategory(page, "Keystone Percentile")
     Settings.RegisterAddOnCategory(category)
   end
 end)

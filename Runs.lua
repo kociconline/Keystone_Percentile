@@ -1,4 +1,4 @@
--- M+ Percentile: records every key (damage, healing, deaths, avoidable damage,
+-- Keystone Percentile: records every key (damage, healing, deaths, avoidable damage,
 -- interrupts, and the same for your group) and ranks it against Warcraft Logs
 -- benchmarks for the spec, dungeon and key level. Healers are ranked on HPS.
 local ADDON, ns = ...
@@ -39,7 +39,7 @@ function ns.DungeonName(run)
     local name = C_ChallengeMode.GetMapUIInfo(run.map)
     if name then return name end
   end
-  if run.map and MPP_DATA.dungeons and MPP_DATA.dungeons[run.map] then return MPP_DATA.dungeons[run.map] end
+  if run.map and KP_DATA.dungeons and KP_DATA.dungeons[run.map] then return KP_DATA.dungeons[run.map] end
   return run.dungeon or "?"
 end
 
@@ -165,7 +165,7 @@ end
 ---------------------------------------------------------------------------
 -- Benchmark for this dungeon/spec/level, or the nearest level within 3.
 function ns.Benchmark(map, specID, level)
-  local t = MPP_DATA.dps and map and MPP_DATA.dps[map]
+  local t = KP_DATA.dps and map and KP_DATA.dps[map]
   t = t and specID and t[specID]
   if not t or not level then return nil end
   if t[level] then return t[level], level end
@@ -245,10 +245,10 @@ local function MyKey() return ns.Key(UnitName("player"), GetRealmName()) end
 ns.MyKey = MyKey
 
 function ns.LiveRuns(key)
-  MPP_RUNS = MPP_RUNS or {}
+  KP_RUNS = KP_RUNS or {}
   key = key or MyKey()
-  MPP_RUNS[key] = MPP_RUNS[key] or {}
-  return MPP_RUNS[key]
+  KP_RUNS[key] = KP_RUNS[key] or {}
+  return KP_RUNS[key]
 end
 
 -- Live runs merged with runs imported from Warcraft Logs. A run that was
@@ -256,7 +256,7 @@ end
 function ns.AllRuns(key)
   key = key or MyKey()
   local out, used = {}, {}
-  local imported = (MPP_DATA.imported and MPP_DATA.imported[key]) or {}
+  local imported = (KP_DATA.imported and KP_DATA.imported[key]) or {}
   for _, live in ipairs(ns.LiveRuns(key)) do
     local r = {}
     for k, v in pairs(live) do r[k] = v end
@@ -306,7 +306,7 @@ function ns.ShareText(run)
     parts[#parts + 1] = (ev.exact and "" or "~") .. string.format(L["Top %s"], ns.FormatPct(ev.top))
       .. (ev.exact and " (Warcraft Logs)" or "")
   end
-  return "[M+ Percentile] " .. table.concat(parts, " · ")
+  return "[Keystone Percentile] " .. table.concat(parts, " · ")
 end
 
 local function SendChat(msg, channel)
@@ -334,7 +334,7 @@ end
 -- End-of-key pop-up
 ---------------------------------------------------------------------------
 local BAR_W, PAD = 340, 14
-local popup = CreateFrame("Frame", "MPlusPercentileRunPopup", UIParent, "BackdropTemplate")
+local popup = CreateFrame("Frame", "KeystonePercentileRunPopup", UIParent, "BackdropTemplate")
 popup:SetSize(BAR_W + 2 * PAD + 6, 300)
 popup:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
 popup:SetFrameStrata("DIALOG")
@@ -346,7 +346,7 @@ popup:SetClampedToScreen(true)
 popup:SetScript("OnDragStart", popup.StartMoving)
 popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
 popup:Hide()
-tinsert(UISpecialFrames, "MPlusPercentileRunPopup")
+tinsert(UISpecialFrames, "KeystonePercentileRunPopup")
 
 local close = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
@@ -551,7 +551,7 @@ function ns.ShowRunPopup(run)
 
   -- Whole group, each against their own spec
   local members = run.group or {}
-  if #members > 0 and MPP_DB.groupRanks ~= false then
+  if #members > 0 and KP_DB.groupRanks ~= false then
     y = y - 10
     popup.groupTitle:SetText(L["Your group"]); Place(popup.groupTitle, PAD, y)
     y = y - 17
@@ -579,7 +579,7 @@ function ns.ShowRunPopup(run)
   if ev.exact and run.report then
     foot = "Warcraft Logs · " .. run.report
   elseif b then
-    foot = L["Warcraft Logs benchmarks"] .. " · " .. (MPP_DATA.updatedAt or "")
+    foot = L["Warcraft Logs benchmarks"] .. " · " .. (KP_DATA.updatedAt or "")
     if ev.benchLevel ~= run.level then foot = foot .. " · " .. string.format(L["using +%d data"], ev.benchLevel) end
   else
     foot = run.src == "logs" and L["Imported from Warcraft Logs"] or L["Recorded in game"]
@@ -595,7 +595,7 @@ end
 function ns.ShowLastRun()
   local runs = ns.AllRuns()
   if runs[1] then ns.ShowRunPopup(runs[1])
-  else print("|cff00ff96M+ Percentile|r: " .. L["No runs recorded yet."]) end
+  else print("|cff00ff96Keystone Percentile|r: " .. L["No runs recorded yet."]) end
 end
 
 ---------------------------------------------------------------------------
@@ -618,7 +618,7 @@ local function Finalize()
   end
   pending, retries = false, 0
 
-  local active = MPP_DB.activeKey
+  local active = KP_DB.activeKey
   local base = active and active.map == map and active.snap or nil
   local dur = timeMs and timeMs / 1000 or nil
   local function PerSec(v) return (v and dur and dur > 0) and math.floor(v / dur + 0.5) or nil end
@@ -630,7 +630,7 @@ local function Finalize()
   local _, classFile = UnitClass("player")
 
   local run = {
-    t = GetServerTime(), season = MPP_DATA.season, map = map, level = level,
+    t = GetServerTime(), season = KP_DATA.season, map = map, level = level,
     timed = onTime and true or false, upgrades = onTime and (upgrades or 1) or 0, dur = dur,
     dps = PerSec(damage), hps = PerSec(healing),
     deaths = Diff(me, meBase, "deaths"), interrupts = Diff(me, meBase, "interrupts"),
@@ -657,9 +657,9 @@ local function Finalize()
   end
 
   table.insert(ns.LiveRuns(), run)
-  MPP_DB.activeKey = nil
+  KP_DB.activeKey = nil
   if ns.OnRunRecorded then ns.OnRunRecorded(run) end
-  if MPP_DB.popup ~= false then ns.ShowRunPopup(run) end
+  if KP_DB.popup ~= false then ns.ShowRunPopup(run) end
 end
 
 local function TryFinalize()
@@ -677,13 +677,13 @@ ev:RegisterEvent("PLAYER_REGEN_ENABLED")
 ev:SetScript("OnEvent", function(_, event)
   if event == "CHALLENGE_MODE_START" then
     local level = C_ChallengeMode.GetActiveKeystoneInfo and C_ChallengeMode.GetActiveKeystoneInfo()
-    MPP_DB.activeKey = {
+    KP_DB.activeKey = {
       map = C_ChallengeMode.GetActiveChallengeMapID and C_ChallengeMode.GetActiveChallengeMapID(),
       level = level, start = GetServerTime(),
       snap = (not InCombatLockdown()) and MeterSnapshot() or nil,
     }
   elseif event == "CHALLENGE_MODE_RESET" then
-    MPP_DB.activeKey = nil
+    KP_DB.activeKey = nil
   elseif event == "CHALLENGE_MODE_COMPLETED" then
     pending, retries = true, 0
     TryFinalize()

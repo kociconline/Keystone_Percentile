@@ -1,13 +1,13 @@
 ## Interface: 120100, 120105
-## Title: M+ Percentile
+## Title: Keystone Percentile
 ## Notes: Mythic+ "Top X%" for your rating (overall, role, class, spec) and your DPS in every key.
 ## Author: You
 ## Version: @project-version@
-## SavedVariables: MPP_DB, MPP_RUNS
+## SavedVariables: KP_DB, KP_RUNS
 ## IconTexture: Interface\Icons\Achievement_ChallengeMode_Gold
-## AddonCompartmentFunc: MPlusPercentile_OnCompartmentClick
-## AddonCompartmentFuncOnEnter: MPlusPercentile_OnCompartmentEnter
-## AddonCompartmentFuncOnLeave: MPlusPercentile_OnCompartmentLeave
+## AddonCompartmentFunc: KeystonePercentile_OnCompartmentClick
+## AddonCompartmentFuncOnEnter: KeystonePercentile_OnCompartmentEnter
+## AddonCompartmentFuncOnLeave: KeystonePercentile_OnCompartmentLeave
 ## Category: Dungeons & Raids
 
 Locale.lua

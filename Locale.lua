@@ -1,4 +1,4 @@
--- M+ Percentile: interface text. English is the key itself; other languages
+-- Keystone Percentile: interface text. English is the key itself; other languages
 -- override it. Missing translations fall back to English automatically.
 local ADDON, ns = ...
 
@@ -22,7 +22,7 @@ if locale == "deDE" then
     ["Couldn't read your damage for this run."] = "Dein Schaden für diesen Lauf konnte nicht gelesen werden.",
     ["DPS / HPS"] = "DPS / HPS",
     ["Data is over 7 days old."] = "Daten sind älter als 7 Tage.",
-    ["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /mpp, /mpp runs, /mpp progress, /mpp next, /mpp last"] = "Daten: %s · aktualisiert %s\n%d Warcraft-Logs-Vergleichswerte · %d importierte Läufe\nBefehle: /mpp, /mpp runs, /mpp progress, /mpp next, /mpp last",
+    ["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /kp, /kp runs, /kp progress, /kp next, /kp last"] = "Daten: %s · aktualisiert %s\n%d Warcraft-Logs-Vergleichswerte · %d importierte Läufe\nBefehle: /kp, /kp runs, /kp progress, /kp next, /kp last",
     ["Data:"] = "Daten:",
     ["Date"] = "Datum",
     ["DPS"] = "Schaden",
@@ -128,7 +128,7 @@ elseif locale == "frFR" then
     ["Couldn't read your damage for this run."] = "Impossible de lire vos dégâts pour cette clé.",
     ["DPS / HPS"] = "DPS / HPS",
     ["Data is over 7 days old."] = "Les données ont plus de 7 jours.",
-    ["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /mpp, /mpp runs, /mpp progress, /mpp next, /mpp last"] = "Données : %s · mises à jour %s\n%d références Warcraft Logs · %d clés importées\nCommandes : /mpp, /mpp runs, /mpp progress, /mpp next, /mpp last",
+    ["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /kp, /kp runs, /kp progress, /kp next, /kp last"] = "Données : %s · mises à jour %s\n%d références Warcraft Logs · %d clés importées\nCommandes : /kp, /kp runs, /kp progress, /kp next, /kp last",
     ["Data:"] = "Données :",
     ["Date"] = "Date",
     ["DPS"] = "DPS",
@@ -235,7 +235,7 @@ elseif locale == "ruRU" then
     ["DPS / HPS"] = "DPS / HPS",
     ["DPS"] = "Бойцы",
     ["Data is over 7 days old."] = "Данным больше 7 дней.",
-    ["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /mpp, /mpp runs, /mpp progress, /mpp next, /mpp last"] = "Данные: %s · обновлено %s\n%d эталонов Warcraft Logs · %d импортированных забегов\nКоманды: /mpp, /mpp runs, /mpp progress, /mpp next, /mpp last",
+    ["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /kp, /kp runs, /kp progress, /kp next, /kp last"] = "Данные: %s · обновлено %s\n%d эталонов Warcraft Logs · %d импортированных забегов\nКоманды: /kp, /kp runs, /kp progress, /kp next, /kp last",
     ["Data:"] = "Данные:",
     ["Date"] = "Дата",
     ["Dungeon"] = "Подземелье",

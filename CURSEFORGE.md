@@ -1,4 +1,4 @@
-# M+ Percentile
+# Keystone Percentile
 
 **See where you rank in Mythic+, chess.com style:** your rating as "Top X%" overall, by role, by class and by spec, plus how your DPS ranks in every key you run.
 
@@ -35,7 +35,7 @@ Holy       Top 7.3%   ~#1,838 / 25,000
 
 ## Commands
 
-`/mpp runs`, `/mpp progress` and `/mpp next` open the history window's tabs, `/mpp last` reopens the last summary, and `/mpp config` opens the settings. Settings are also under Options > AddOns, and in the addon dropdown by the minimap.
+`/kp runs`, `/kp progress` and `/kp next` open the history window's tabs, `/kp last` reopens the last summary, and `/kp config` opens the settings. Settings are also under Options > AddOns, and in the addon dropdown by the minimap.
 
 Available in English, Deutsch, Français and Русский.
 

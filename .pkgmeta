@@ -1,4 +1,4 @@
-package-as: MPlusPercentile
+package-as: Keystone_Percentile
 
 enable-nolib-creation: no
 

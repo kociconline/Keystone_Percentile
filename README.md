@@ -1,4 +1,4 @@
-# M+ Percentile
+# Keystone Percentile
 
 Two things, chess.com style:
 
@@ -25,12 +25,12 @@ Herald of the Sun   —          no ranking data
 - Your whole group, each ranked against players of their own spec.
 - A Share button: click posts to group chat, shift-click to guild chat.
 
-**History window** (click the panel, or `/mpp runs`), with three tabs:
+**History window** (click the panel, or `/kp runs`), with three tabs:
 - **Runs:** every key you've done, with result, DPS or HPS, rank and a bar against #1. Filter by season, dungeon and spec, and sort by date, rank or amount. A star marks your best run per dungeon. Click any run to reopen its summary.
 - **Progress:** a graph of your rating over the last 30 days or the whole season, coloured by percentile, with your change this week and this month ("+42 rating · Top 9.4% → Top 8.6%"). Your rating is saved once a day while you play, so the graph starts after two days.
 - **Next keys:** for every dungeon, the key level to run next, about how much rating timing it would give, and your new Top % overall and for your spec. Estimates are fitted from your own dungeon scores.
 
-**Settings** are under Options > AddOns > M+ Percentile, or right-click the addon's icon in the addon dropdown by the minimap.
+**Settings** are under Options > AddOns > Keystone Percentile, or right-click the addon's icon in the addon dropdown by the minimap.
 
 Ranks marked `~` are estimates from benchmarks. Ranks without `~` are official Warcraft Logs ranks for uploaded runs.
 
@@ -53,7 +53,7 @@ The interface is in English, German, French and Russian.
 
 ## Install
 
-1. Copy the `MPlusPercentile` folder to `World of Warcraft/_retail_/Interface/AddOns/`.
+1. Copy the `Keystone_Percentile` folder to `World of Warcraft/_retail_/Interface/AddOns/`.
 2. Type `/reload` in game. With a CurseForge release you're done.
 
 ### Optional: import your Warcraft Logs runs and exact ranks
@@ -81,18 +81,18 @@ Warcraft Logs limits free keys to a number of points per hour. The script stops 
 
 | Command | Effect |
 |---|---|
-| `/mpp` | Print the rating rows in chat |
-| `/mpp runs` | Open or close the run history |
-| `/mpp progress` | Open the rating graph |
-| `/mpp next` | Open the next-key suggestions |
-| `/mpp config` | Open the settings |
-| `/mpp last` | Reopen the last run's summary |
-| `/mpp popup` | Turn the end-of-key pop-up on or off |
-| `/mpp hide` / `show` | Toggle the rating panel |
-| `/mpp lock` | Lock or unlock dragging |
-| `/mpp reset` | Reset the panel position |
-| `/mpp tooltips` | Toggle "Top X%" on player tooltips |
-| `/mpp region eu` | Force a region (`auto` to undo) |
+| `/kp` | Print the rating rows in chat |
+| `/kp runs` | Open or close the run history |
+| `/kp progress` | Open the rating graph |
+| `/kp next` | Open the next-key suggestions |
+| `/kp config` | Open the settings |
+| `/kp last` | Reopen the last run's summary |
+| `/kp popup` | Turn the end-of-key pop-up on or off |
+| `/kp hide` / `show` | Toggle the rating panel |
+| `/kp lock` | Lock or unlock dragging |
+| `/kp reset` | Reset the panel position |
+| `/kp tooltips` | Toggle "Top X%" on player tooltips |
+| `/kp region eu` | Force a region (`auto` to undo) |
 
 ## Publishing (CurseForge, Wago, WoWInterface)
 
@@ -104,7 +104,7 @@ Releases are built by the BigWigs packager on GitHub Actions:
 One-time setup:
 
 1. Push this folder to a GitHub repository.
-2. Create the project on [CurseForge](https://authors.curseforge.com), [Wago](https://addons.wago.io) and/or [WoWInterface](https://www.wowinterface.com). Add each ID to `MPlusPercentile.toc`:
+2. Create the project on [CurseForge](https://authors.curseforge.com), [Wago](https://addons.wago.io) and/or [WoWInterface](https://www.wowinterface.com). Add each ID to `Keystone_Percentile.toc`:
    ```
    ## X-Curse-Project-ID: 123456
    ## X-Wago-ID: abcdEFGH
