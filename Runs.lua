@@ -1,19 +1,21 @@
--- M+ Percentile: records your DPS for every key and ranks it against
--- Warcraft Logs benchmarks for your spec, dungeon and key level.
+-- M+ Percentile: records every key (damage, healing, deaths, avoidable damage,
+-- interrupts, and the same for your group) and ranks it against Warcraft Logs
+-- benchmarks for the spec, dungeon and key level. Healers are ranked on HPS.
 local ADDON, ns = ...
+local L = ns.L
 
 local ANCHORS = { 1, 10, 25, 50, 75 } -- benchmark keys p1, p10, ...
 
 ---------------------------------------------------------------------------
 -- Formatting
 ---------------------------------------------------------------------------
-local function FormatDPS(v)
+local function FormatAmount(v)
   if not v then return "—" end
   if v >= 1e6 then return string.format("%.2fM", v / 1e6) end
   if v >= 1e3 then return string.format("%.1fk", v / 1e3) end
   return string.format("%d", v)
 end
-ns.FormatDPS = FormatDPS
+ns.FormatDPS = FormatAmount
 
 local function FormatTime(sec)
   if not sec then return "" end
@@ -25,6 +27,12 @@ local function ClassColor(classFile)
   local c = classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
   return c and c.colorStr or "ffffffff"
 end
+ns.ClassColor = ClassColor
+
+local function HexToRGB(hex)
+  return tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, tonumber(hex:sub(7, 8), 16) / 255
+end
+ns.HexToRGB = HexToRGB
 
 function ns.DungeonName(run)
   if run.map and C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
@@ -32,31 +40,112 @@ function ns.DungeonName(run)
     if name then return name end
   end
   if run.map and MPP_DATA.dungeons and MPP_DATA.dungeons[run.map] then return MPP_DATA.dungeons[run.map] end
-  return run.dungeon or "Unknown dungeon"
+  return run.dungeon or "?"
 end
 
 ---------------------------------------------------------------------------
--- Reading your damage from the game's built-in damage meter.
--- Values are secret during combat, so this is only called out of combat.
+-- Specs: role, names and the icon -> spec lookup used for group members
 ---------------------------------------------------------------------------
-local function PlayerDamageTotal()
-  if not (C_DamageMeter and C_DamageMeter.GetCombatSessionFromType and Enum.DamageMeterSessionType) then
-    return nil
-  end
-  local ok, total = pcall(function()
-    local session = C_DamageMeter.GetCombatSessionFromType(
-      Enum.DamageMeterSessionType.Overall, Enum.DamageMeterType.DamageDone)
-    if not session or ns.IsSecret(session) then return nil end
-    for _, src in ipairs(session.combatSources or {}) do
-      if src.isLocalPlayer then
-        local v = src.totalAmount
-        if v == nil or ns.IsSecret(v) then return nil end
-        return v
+local specByIcon
+local function SpecFromIcon(icon)
+  if not specByIcon then
+    specByIcon = {}
+    local n = GetNumClasses and GetNumClasses() or 13
+    for classID = 1, n do
+      local count = GetNumSpecializationsForClassID and GetNumSpecializationsForClassID(classID) or 0
+      for i = 1, count do
+        local id, _, _, specIcon = GetSpecializationInfoForClassID(classID, i)
+        if id and specIcon then specByIcon[specIcon] = id end
       end
     end
-    return 0
-  end)
-  if ok then return total end
+  end
+  return icon and specByIcon[icon]
+end
+
+local ROLE_FROM_GAME = { HEALER = "healer", TANK = "tank", DAMAGER = "dps" }
+function ns.SpecInfo(specID)
+  if not specID or not GetSpecializationInfoByID then return nil end
+  local id, name, _, icon, role, classFile, className = GetSpecializationInfoByID(specID)
+  if not id then return nil end
+  return { name = name, icon = icon, role = ROLE_FROM_GAME[role] or "dps", classFile = classFile, className = className }
+end
+
+-- "hps" for healers, "dps" for everyone else.
+function ns.RunMetric(run)
+  local role = run.role
+  if not role then
+    local info = ns.SpecInfo(run.specID)
+    role = info and info.role
+  end
+  return role == "healer" and "hps" or "dps", role or "dps"
+end
+
+---------------------------------------------------------------------------
+-- Reading the game's damage meter. Values are secret during combat, so this
+-- only runs out of combat (at key start, and right after the key ends).
+---------------------------------------------------------------------------
+local METER_TYPES = {
+  damage = "DamageDone", healing = "HealingDone", taken = "DamageTaken",
+  avoidable = "AvoidableDamageTaken", interrupts = "Interrupts", deaths = "Deaths",
+}
+
+local function ShortName(name)
+  return name and name:match("^[^%-]+") or name
+end
+
+local function GroupNames()
+  local names = {}
+  for i = 1, 4 do
+    local n = UnitName("party" .. i)
+    if n then names[n] = true end
+  end
+  return names
+end
+
+-- { me = {damage=..,...}, ["Name"] = {damage=.., classFile=.., specIcon=..}, ... }
+local function MeterSnapshot()
+  if not (C_DamageMeter and C_DamageMeter.GetCombatSessionFromType and Enum.DamageMeterSessionType
+      and Enum.DamageMeterType) then
+    return nil
+  end
+  local party = GroupNames()
+  local snap = {}
+  for field, enumName in pairs(METER_TYPES) do
+    local mtype = Enum.DamageMeterType[enumName]
+    if mtype then
+      pcall(function()
+        local session = C_DamageMeter.GetCombatSessionFromType(Enum.DamageMeterSessionType.Overall, mtype)
+        if not session or ns.IsSecret(session) then return end
+        for _, src in ipairs(session.combatSources or {}) do
+          local v = src.totalAmount
+          if v ~= nil and not ns.IsSecret(v) then
+            local key
+            if src.isLocalPlayer then
+              key = "me"
+            elseif src.name and not ns.IsSecret(src.name) and party[ShortName(src.name)] then
+              key = ShortName(src.name)
+            end
+            if key then
+              local e = snap[key] or {}
+              e[field] = v
+              e.classFile = e.classFile or src.classFilename
+              e.specIcon = e.specIcon or src.specIconID
+              snap[key] = e
+            end
+          end
+        end
+      end)
+    end
+  end
+  return snap -- may be empty: an empty meter is a valid zero baseline
+end
+
+local function Diff(now, base, field)
+  local v = now and now[field]
+  if v == nil then return nil end
+  local b = base and base[field]
+  if b and v >= b then return v - b end
+  return v
 end
 
 local function CompletionInfo()
@@ -67,8 +156,7 @@ local function CompletionInfo()
     end
   end
   if C_ChallengeMode.GetCompletionInfo then
-    local map, level, time, onTime, upgrades = C_ChallengeMode.GetCompletionInfo()
-    return map, level, time, onTime, upgrades
+    return C_ChallengeMode.GetCompletionInfo()
   end
 end
 
@@ -94,50 +182,67 @@ local function Anchors(b)
     local v = b["p" .. a]
     if v and (#list == 0 or v < list[#list].v) then list[#list + 1] = { pct = a, v = v } end
   end
-  return list -- best first
+  return list
 end
 
--- Top X% for a DPS value against a benchmark.
-local function EstimateTop(dps, b)
+local function EstimateTop(amount, b)
   local c = Anchors(b)
   if #c == 0 then return nil end
-  if dps >= c[1].v then return c[1].pct end
+  if amount >= c[1].v then return c[1].pct end
   for i = 1, #c - 1 do
     local hi, lo = c[i], c[i + 1]
-    if dps >= lo.v then
+    if amount >= lo.v then
       if hi.v == lo.v then return lo.pct end
-      local t = (dps - lo.v) / (hi.v - lo.v)
+      local t = (amount - lo.v) / (hi.v - lo.v)
       return math.exp(math.log(lo.pct) + t * (math.log(hi.pct) - math.log(lo.pct)))
     end
   end
   local last = c[#c]
-  if dps <= 0 or last.v <= 0 then return 100 end
-  return last.pct + (100 - last.pct) * (1 - dps / last.v)
+  if amount <= 0 or last.v <= 0 then return 100 end
+  return last.pct + (100 - last.pct) * (1 - amount / last.v)
 end
 
--- Everything the pop-up and history need about one run.
-function ns.EvaluateRun(run)
-  local ev = {}
-  local b, bLevel = ns.Benchmark(run.map, run.specID, run.level)
+-- Rank one amount (DPS or HPS) for a spec in a dungeon/level.
+function ns.Rank(map, specID, level, metric, amount, officialPct)
+  local ev = { metric = metric, amount = amount }
+  local b, bLevel = ns.Benchmark(map, specID, level)
+  if b and b.m and b.m ~= metric then b = nil end
   ev.bench, ev.benchLevel = b, bLevel
-  if run.pct then -- official Warcraft Logs percentile (higher is better)
-    ev.top, ev.exact = math.max(100 - run.pct, 0.1), true
-  elseif b and run.dps then
-    ev.top = EstimateTop(run.dps, b)
+  if officialPct then
+    ev.top, ev.exact = math.max(100 - officialPct, 0.1), true
+  elseif b and amount then
+    ev.top = EstimateTop(amount, b)
   end
-  if b and b.top and run.dps and b.top > 0 then ev.ofTop = run.dps / b.top end
+  if b and b.top and amount and b.top > 0 then ev.ofTop = amount / b.top end
+  return ev
+end
+
+function ns.EvaluateRun(run)
+  local metric, role = ns.RunMetric(run)
+  local amount = run[metric]
+  local official = metric == "hps" and run.hpct or run.pct
+  local ev = ns.Rank(run.map, run.specID, run.level, metric, amount, official)
+  ev.role = role
   return ev
 end
 
 function ns.TopText(ev)
   if not ev or not ev.top then return "|cff777777—|r" end
-  return string.format("|c%s%sTop %s|r", ns.PctColor(ev.top), ev.exact and "" or "~", ns.FormatPct(ev.top))
+  return string.format("|c%s%s%s|r", ns.PctColor(ev.top), ev.exact and "" or "~",
+    string.format(L["Top %s"], ns.FormatPct(ev.top)))
+end
+
+local function AmountLabel(metric, role)
+  if metric == "hps" then return L["your HPS"] end
+  if role == "tank" then return L["your DPS (tank)"] end
+  return L["your DPS"]
 end
 
 ---------------------------------------------------------------------------
 -- Run storage
 ---------------------------------------------------------------------------
 local function MyKey() return ns.Key(UnitName("player"), GetRealmName()) end
+ns.MyKey = MyKey
 
 function ns.LiveRuns(key)
   MPP_RUNS = MPP_RUNS or {}
@@ -160,7 +265,7 @@ function ns.AllRuns(key)
         and ((imp.map and imp.map == live.map) or (not imp.map and imp.dungeon == ns.DungeonName(live)))
         and math.abs((imp.t or 0) - (live.t or 0)) < 3 * 3600 then
         used[i] = true
-        r.pct, r.report, r.src = imp.pct, imp.report, "both"
+        r.pct, r.hpct, r.report, r.src = imp.pct, imp.hpct, imp.report, "both"
         break
       end
     end
@@ -173,16 +278,68 @@ function ns.AllRuns(key)
   return out
 end
 
+-- Your averages over recorded runs, for "is this run unusual?"
+local function Averages()
+  local n, deaths, avoid, kicks = 0, 0, 0, 0
+  for _, r in ipairs(ns.LiveRuns()) do
+    if r.deaths and r.avoidPct then
+      n = n + 1
+      deaths, avoid, kicks = deaths + r.deaths, avoid + r.avoidPct, kicks + (r.interrupts or 0)
+    end
+  end
+  if n < 3 then return nil end
+  return { deaths = deaths / n, avoid = avoid / n, kicks = kicks / n, n = n }
+end
+
+---------------------------------------------------------------------------
+-- Sharing a run in chat
+---------------------------------------------------------------------------
+function ns.ShareText(run)
+  local ev = ns.EvaluateRun(run)
+  local spec = (run.spec or "") .. (run.className and (" " .. run.className) or "")
+  local result = run.timed == true and string.format(L["Timed +%d"], run.upgrades or 1)
+    or run.timed == false and L["Over time"] or nil
+  local parts = { string.format("%s +%s%s", ns.DungeonName(run), run.level or "?", result and (" (" .. result .. ")") or "") }
+  if spec ~= "" then parts[#parts + 1] = spec end
+  if ev.amount then parts[#parts + 1] = FormatAmount(ev.amount) .. " " .. (ev.metric == "hps" and "HPS" or "DPS") end
+  if ev.top then
+    parts[#parts + 1] = (ev.exact and "" or "~") .. string.format(L["Top %s"], ns.FormatPct(ev.top))
+      .. (ev.exact and " (Warcraft Logs)" or "")
+  end
+  return "[M+ Percentile] " .. table.concat(parts, " · ")
+end
+
+local function SendChat(msg, channel)
+  if C_ChatInfo and C_ChatInfo.SendChatMessage then
+    C_ChatInfo.SendChatMessage(msg, channel)
+  else
+    SendChatMessage(msg, channel)
+  end
+end
+
+function ns.ShareRun(run, toGuild)
+  local msg = ns.ShareText(run)
+  local channel
+  if toGuild then
+    channel = IsInGuild() and "GUILD" or nil
+  elseif IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+    channel = "INSTANCE_CHAT"
+  elseif IsInGroup() then
+    channel = "PARTY"
+  end
+  if channel then SendChat(msg, channel) else print(msg) end
+end
+
 ---------------------------------------------------------------------------
 -- End-of-key pop-up
 ---------------------------------------------------------------------------
-local BAR_W = 320
+local BAR_W, PAD = 340, 14
 local popup = CreateFrame("Frame", "MPlusPercentileRunPopup", UIParent, "BackdropTemplate")
-popup:SetSize(BAR_W + 40, 220)
+popup:SetSize(BAR_W + 2 * PAD + 6, 300)
 popup:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
 popup:SetFrameStrata("DIALOG")
 popup:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-popup:SetBackdropColor(0, 0, 0, 0.82)
+popup:SetBackdropColor(0, 0, 0, 0.85)
 popup:SetBackdropBorderColor(0, 0, 0, 1)
 popup:SetMovable(true); popup:EnableMouse(true); popup:RegisterForDrag("LeftButton")
 popup:SetClampedToScreen(true)
@@ -194,108 +351,152 @@ tinsert(UISpecialFrames, "MPlusPercentileRunPopup")
 local close = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
 
-local function FS(font, ...)
+local function FS(font, justify)
   local f = popup:CreateFontString(nil, "OVERLAY", font)
-  f:SetPoint(...)
-  f:SetJustifyH("LEFT")
+  f:SetJustifyH(justify or "LEFT")
   return f
 end
 
-popup.title = FS("GameFontNormalLarge", "TOPLEFT", 14, -12)
-popup.result = FS("GameFontHighlightSmall", "TOPRIGHT", -30, -15)
-popup.spec = FS("GameFontHighlight", "TOPLEFT", 14, -32)
-popup.dps = FS("GameFontHighlightHuge", "TOPLEFT", 14, -56)
-popup.dpsLabel = FS("GameFontDisableSmall", "BOTTOMLEFT", popup.dps, "BOTTOMRIGHT", 6, 3)
-popup.top = FS("GameFontNormalLarge", "TOPRIGHT", -16, -58)
-popup.sub = FS("GameFontDisableSmall", "TOPLEFT", 14, -82)
+popup.title = FS("GameFontNormalLarge")
+popup.result = FS("GameFontHighlightSmall", "RIGHT")
+popup.spec = FS("GameFontHighlight")
+popup.amount = FS("GameFontHighlightHuge")
+popup.amountLabel = FS("GameFontDisableSmall")
+popup.top = FS("GameFontNormalLarge", "RIGHT")
+popup.sub = FS("GameFontDisableSmall")
+popup.why = FS("GameFontHighlightSmall")
+popup.groupTitle = FS("GameFontNormal")
+popup.footer = FS("GameFontDisableSmall")
 
 popup.barBG = popup:CreateTexture(nil, "ARTWORK")
 popup.barBG:SetColorTexture(0.17, 0.19, 0.23, 1)
 popup.barBG:SetSize(BAR_W, 8)
-popup.barBG:SetPoint("TOPLEFT", 20, -114)
 popup.bar = popup:CreateTexture(nil, "ARTWORK", nil, 1)
-popup.bar:SetPoint("TOPLEFT", popup.barBG, "TOPLEFT")
 popup.bar:SetHeight(8)
-popup.you = FS("GameFontHighlightSmall", "BOTTOM", popup.barBG, "TOPLEFT", 0, 3)
-popup.you:SetText("you")
-
+popup.you = FS("GameFontHighlightSmall", "CENTER")
+popup.you:SetText(L["you"])
 popup.markers = {}
 for i = 1, 6 do
-  local t = popup:CreateTexture(nil, "OVERLAY")
-  t:SetSize(1, 16)
-  local l = popup:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  popup.markers[i] = { tex = t, label = l }
+  popup.markers[i] = { tex = popup:CreateTexture(nil, "OVERLAY"), label = FS("GameFontDisableSmall", "CENTER") }
+  popup.markers[i].tex:SetSize(1, 16)
 end
 
-popup.rows = {}
-for i = 1, 3 do
-  popup.rows[i] = {
-    FS("GameFontNormal", "TOPLEFT", 14, -150 - (i - 1) * 17),
-    FS("GameFontDisable", "TOPLEFT", 90, -150 - (i - 1) * 17),
-    FS("GameFontNormal", "TOPRIGHT", -16, -150 - (i - 1) * 17),
-  }
-  popup.rows[i][3]:SetJustifyH("RIGHT")
-end
-popup.footer = FS("GameFontDisableSmall", "BOTTOMLEFT", 14, 10)
+popup.goals = {}
+for i = 1, 3 do popup.goals[i] = { FS("GameFontNormal"), FS("GameFontDisable"), FS("GameFontNormal", "RIGHT") } end
+popup.members = {}
+for i = 1, 5 do popup.members[i] = { FS("GameFontHighlightSmall"), FS("GameFontDisableSmall", "RIGHT"), FS("GameFontHighlightSmall", "RIGHT") } end
 
-local function HexToRGB(hex)
-  return tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, tonumber(hex:sub(7, 8), 16) / 255
+local share = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+share:SetSize(70, 20)
+share:SetText(L["Share"])
+share:SetPoint("BOTTOMRIGHT", -10, 8)
+share:RegisterForClicks("LeftButtonUp")
+share:SetScript("OnClick", function() if popup.run then ns.ShareRun(popup.run, IsShiftKeyDown()) end end)
+share:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+  GameTooltip:AddLine(L["Share"])
+  GameTooltip:AddLine(L["Click: group chat. Shift-click: guild chat."], 1, 1, 1, true)
+  GameTooltip:Show()
+end)
+share:SetScript("OnLeave", GameTooltip_Hide)
+
+local function Place(fs, x, y, point)
+  fs:ClearAllPoints()
+  fs:SetPoint(point or "TOPLEFT", popup, point or "TOPLEFT", x, y)
+  fs:Show()
+end
+
+local function WhyText(run)
+  if run.deaths == nil and run.avoidPct == nil and run.interrupts == nil then return nil end
+  local avg = Averages()
+  local parts = {}
+  if run.deaths ~= nil then
+    local bad = run.deaths > 0 and (not avg or run.deaths > avg.deaths)
+    local word = run.deaths == 1 and L["death"] or L["deaths"]
+    parts[#parts + 1] = string.format("|cff%s%d %s|r", bad and "ff5555" or "dddddd", run.deaths, word)
+  end
+  if run.avoidPct ~= nil then
+    local bad = avg and run.avoidPct > avg.avoid * 1.2
+    parts[#parts + 1] = string.format("|cff%s%d%% %s|r", bad and "ff5555" or "dddddd",
+      math.floor(run.avoidPct + 0.5), L["avoidable damage"])
+  end
+  if run.interrupts ~= nil then
+    parts[#parts + 1] = string.format("|cffdddddd%d %s|r", run.interrupts, L["interrupts"])
+  end
+  local s = table.concat(parts, "  ·  ")
+  if avg then
+    s = s .. string.format("\n|cff888888%s: %.1f %s · %d%% %s · %.1f %s|r", L["your average"],
+      avg.deaths, L["deaths"], math.floor(avg.avoid + 0.5), L["avoidable"], avg.kicks, L["interrupts"])
+  end
+  return s
 end
 
 function ns.ShowRunPopup(run)
+  popup.run = run
   local ev = ns.EvaluateRun(run)
-  popup.title:SetText(string.format("%s +%s", ns.DungeonName(run), run.level or "?"))
+  local y = -12
 
+  popup.title:SetText(string.format("%s +%s", ns.DungeonName(run), run.level or "?"))
+  Place(popup.title, PAD, y)
   if run.timed == true then
-    popup.result:SetText(string.format("|cff1eff00Timed +%d|r |cff999999· %s|r", run.upgrades or 1, FormatTime(run.dur)))
+    popup.result:SetText(string.format("|cff1eff00%s|r |cff999999· %s|r", string.format(L["Timed +%d"], run.upgrades or 1), FormatTime(run.dur)))
   elseif run.timed == false then
-    popup.result:SetText(string.format("|cffff5555Over time|r |cff999999· %s|r", FormatTime(run.dur)))
+    popup.result:SetText(string.format("|cffff5555%s|r |cff999999· %s|r", L["Over time"], FormatTime(run.dur)))
   else
     popup.result:SetText(run.dur and ("|cff999999" .. FormatTime(run.dur) .. "|r") or "")
   end
+  Place(popup.result, -30, y - 3, "TOPRIGHT")
+  y = y - 20
 
   local spec = (run.spec or "") .. (run.className and (" " .. run.className) or "")
   if run.hero then spec = spec .. " · " .. run.hero end
   popup.spec:SetText(string.format("|c%s%s|r", ClassColor(run.classFile), spec))
+  Place(popup.spec, PAD, y)
+  y = y - 24
 
-  popup.dps:SetText(FormatDPS(run.dps))
-  popup.dpsLabel:SetText(run.approx and "your DPS (approx.)" or "your DPS")
+  popup.amount:SetText(FormatAmount(ev.amount))
+  Place(popup.amount, PAD, y)
+  popup.amountLabel:SetText(AmountLabel(ev.metric, ev.role) .. (run.approx and (" (" .. L["approx."] .. ")") or ""))
+  popup.amountLabel:ClearAllPoints()
+  popup.amountLabel:SetPoint("BOTTOMLEFT", popup.amount, "BOTTOMRIGHT", 6, 3)
+  popup.amountLabel:Show()
   popup.top:SetText(ns.TopText(ev))
+  Place(popup.top, -PAD, y - 2, "TOPRIGHT")
+  y = y - 26
 
   local b = ev.bench
-  if run.dps == nil then
-    popup.sub:SetText("|cffff5555Couldn't read your damage for this run.|r")
+  if ev.amount == nil then
+    popup.sub:SetText("|cffff5555" .. L["Couldn't read your damage for this run."] .. "|r")
   elseif ev.exact then
-    popup.sub:SetText("Official Warcraft Logs rank for this run")
+    popup.sub:SetText(L["Official Warcraft Logs rank for this run"])
   elseif b then
-    popup.sub:SetText(string.format("of %s logged %s%s runs at +%d", ns.Num(b.n or 0), run.spec or "",
-      run.className and (" " .. run.className) or "", ev.benchLevel))
+    popup.sub:SetText(string.format(L["of %s logged %s runs at +%d"], ns.Num(b.n or 0), (spec:match("^[^·]+") or ""):gsub("%s+$", ""), ev.benchLevel))
   else
-    popup.sub:SetText("No Warcraft Logs benchmark for this spec and key level yet.")
+    popup.sub:SetText(L["No Warcraft Logs benchmark for this spec and key level yet."])
   end
+  Place(popup.sub, PAD, y)
+  y = y - 18
 
-  -- Bar: 0 .. #1 DPS, with markers at each percentile.
-  local showBar = b and b.top and b.top > 0 and run.dps
+  -- Bar: 0 .. #1, with markers at each percentile
   for _, m in ipairs(popup.markers) do m.tex:Hide(); m.label:Hide() end
-  if showBar then
-    popup.barBG:Show(); popup.bar:Show(); popup.you:Show()
-    local frac = math.min(run.dps / b.top, 1)
+  if b and b.top and b.top > 0 and ev.amount then
+    y = y - 14
+    popup.barBG:ClearAllPoints(); popup.barBG:SetPoint("TOPLEFT", popup, "TOPLEFT", PAD + 3, y); popup.barBG:Show()
+    local frac = math.min(ev.amount / b.top, 1)
+    popup.bar:ClearAllPoints(); popup.bar:SetPoint("TOPLEFT", popup.barBG, "TOPLEFT")
     popup.bar:SetWidth(math.max(1, frac * BAR_W))
-    popup.bar:SetColorTexture(HexToRGB(ns.PctColor(ev.top or 100)))
-    popup.you:ClearAllPoints()
-    popup.you:SetPoint("BOTTOM", popup.barBG, "TOPLEFT", frac * BAR_W, 3)
-
-    local marks = { { 50, "50%" }, { 25, "25%" }, { 10, "10%" }, { 1, "1%" } }
+    popup.bar:SetColorTexture(HexToRGB(ns.PctColor(ev.top or 100))); popup.bar:Show()
+    popup.you:ClearAllPoints(); popup.you:SetPoint("BOTTOM", popup.barBG, "TOPLEFT", frac * BAR_W, 3); popup.you:Show()
     local lastX = -100
-    for i, m in ipairs(marks) do
-      local v = b["p" .. m[1]]
+    for i, a in ipairs({ 50, 25, 10, 1 }) do
+      local v = b["p" .. a]
       if v then
         local x = math.min(v / b.top, 1) * BAR_W
         local mk = popup.markers[i]
-        mk.tex:SetColorTexture(HexToRGB(ns.PctColor(m[1])))
+        mk.tex:SetColorTexture(HexToRGB(ns.PctColor(a)))
         mk.tex:ClearAllPoints(); mk.tex:SetPoint("TOP", popup.barBG, "TOPLEFT", x, 4); mk.tex:Show()
         if x - lastX > 24 then
-          mk.label:SetText(m[2]); mk.label:ClearAllPoints()
+          mk.label:SetText(a .. "%"); mk.label:ClearAllPoints()
           mk.label:SetPoint("TOP", popup.barBG, "BOTTOMLEFT", x, -4); mk.label:Show()
           lastX = x
         end
@@ -306,51 +507,95 @@ function ns.ShowRunPopup(run)
     mk.tex:ClearAllPoints(); mk.tex:SetPoint("TOP", popup.barBG, "TOPRIGHT", 0, 4); mk.tex:Show()
     mk.label:SetText("#1"); mk.label:ClearAllPoints()
     mk.label:SetPoint("TOPRIGHT", popup.barBG, "BOTTOMRIGHT", 0, -4); mk.label:Show()
+    y = y - 32
   else
     popup.barBG:Hide(); popup.bar:Hide(); popup.you:Hide()
   end
 
-  -- Goal rows
-  local rows = {}
-  if b and run.dps then
+  -- Goals
+  local goals = {}
+  if b and ev.amount then
     for _, a in ipairs({ 10, 1 }) do
       local v = b["p" .. a]
       if v then
-        local gap = v - run.dps
-        rows[#rows + 1] = { "Top " .. a .. "%", FormatDPS(v),
-          gap > 0 and ("+" .. FormatDPS(gap)) or "|cff1eff00reached|r" }
+        local gap = v - ev.amount
+        goals[#goals + 1] = { string.format(L["Top %s"], a .. "%"), FormatAmount(v),
+          gap > 0 and ("+" .. FormatAmount(gap)) or ("|cff1eff00" .. L["reached"] .. "|r") }
       end
     end
     if b.top then
-      rows[#rows + 1] = { "#1", FormatDPS(b.top), string.format("you're at %d%%", math.floor((ev.ofTop or 0) * 100 + 0.5)) }
+      goals[#goals + 1] = { "#1", FormatAmount(b.top), string.format(L["you're at %d%%"], math.floor((ev.ofTop or 0) * 100 + 0.5)) }
     end
   end
-  for i, fs in ipairs(popup.rows) do
-    local r = rows[i]
-    for c = 1, 3 do fs[c]:SetText(r and r[c] or "") end
+  for i, g in ipairs(popup.goals) do
+    local row = goals[i]
+    if row then
+      g[1]:SetText(row[1]); Place(g[1], PAD, y)
+      g[2]:SetText(row[2]); Place(g[2], PAD + 80, y)
+      g[3]:SetText(row[3]); Place(g[3], -PAD, y, "TOPRIGHT")
+      y = y - 17
+    else
+      for c = 1, 3 do g[c]:Hide() end
+    end
+  end
+
+  -- Why: deaths, avoidable damage, interrupts
+  local why = WhyText(run)
+  if why then
+    y = y - 6
+    popup.why:SetText(why); popup.why:SetWidth(BAR_W + 6); Place(popup.why, PAD, y)
+    y = y - popup.why:GetStringHeight() - 2
+  else
+    popup.why:Hide()
+  end
+
+  -- Whole group, each against their own spec
+  local members = run.group or {}
+  if #members > 0 and MPP_DB.groupRanks ~= false then
+    y = y - 10
+    popup.groupTitle:SetText(L["Your group"]); Place(popup.groupTitle, PAD, y)
+    y = y - 17
+    for i, row in ipairs(popup.members) do
+      local m = members[i]
+      if m then
+        local info = ns.SpecInfo(m.specID)
+        local metric = (info and info.role == "healer") and "hps" or "dps"
+        local mev = ns.Rank(run.map, m.specID, run.level, metric, m[metric])
+        local label = string.format("|c%s%s|r |cff999999%s|r", ClassColor(m.classFile), m.name or "?", info and info.name or "")
+        row[1]:SetText(label); Place(row[1], PAD, y)
+        row[2]:SetText(FormatAmount(m[metric]) .. " " .. (metric == "hps" and "HPS" or "DPS")); Place(row[2], -110, y, "TOPRIGHT")
+        row[3]:SetText(ns.TopText(mev)); Place(row[3], -PAD, y, "TOPRIGHT")
+        y = y - 15
+      else
+        for c = 1, 3 do row[c]:Hide() end
+      end
+    end
+  else
+    popup.groupTitle:Hide()
+    for _, row in ipairs(popup.members) do for c = 1, 3 do row[c]:Hide() end end
   end
 
   local foot
   if ev.exact and run.report then
-    foot = "Warcraft Logs report " .. run.report
+    foot = "Warcraft Logs · " .. run.report
   elseif b then
-    foot = "Warcraft Logs benchmarks · " .. (MPP_DATA.updatedAt or "")
-    if ev.benchLevel ~= run.level then foot = foot .. string.format(" · using +%d data", ev.benchLevel) end
+    foot = L["Warcraft Logs benchmarks"] .. " · " .. (MPP_DATA.updatedAt or "")
+    if ev.benchLevel ~= run.level then foot = foot .. " · " .. string.format(L["using +%d data"], ev.benchLevel) end
   else
-    foot = run.src == "logs" and "Imported from Warcraft Logs" or "Recorded in game"
+    foot = run.src == "logs" and L["Imported from Warcraft Logs"] or L["Recorded in game"]
   end
   popup.footer:SetText(foot)
-
-  local h = 150 + #rows * 17 + 30
-  if not showBar then h = h - 30 end
-  popup:SetHeight(math.max(h, 130))
+  popup.footer:SetWidth(BAR_W - 70)
+  y = y - 10
+  Place(popup.footer, PAD, y)
+  popup:SetHeight(-y + 34)
   popup:Show()
 end
 
 function ns.ShowLastRun()
   local runs = ns.AllRuns()
   if runs[1] then ns.ShowRunPopup(runs[1])
-  else print("|cff00ff96M+ Percentile|r: no runs recorded yet.") end
+  else print("|cff00ff96M+ Percentile|r: " .. L["No runs recorded yet."]) end
 end
 
 ---------------------------------------------------------------------------
@@ -364,8 +609,8 @@ local function Finalize()
   local map, level, timeMs, onTime, upgrades = CompletionInfo()
   if not map then pending = false return end
 
-  local total = PlayerDamageTotal()
-  if total == nil and retries < 5 then
+  local snap = MeterSnapshot()
+  if (not snap or not snap.me) and retries < 5 then
     retries = retries + 1
     scheduled = true
     C_Timer.After(2, Finalize)
@@ -374,22 +619,46 @@ local function Finalize()
   pending, retries = false, 0
 
   local active = MPP_DB.activeKey
-  local base = active and active.map == map and active.base or nil
-  local dmg = total
-  if total and base and total >= base then dmg = total - base end
+  local base = active and active.map == map and active.snap or nil
   local dur = timeMs and timeMs / 1000 or nil
+  local function PerSec(v) return (v and dur and dur > 0) and math.floor(v / dur + 0.5) or nil end
+
+  local me, meBase = snap and snap.me, base and base.me
+  local damage, healing = Diff(me, meBase, "damage"), Diff(me, meBase, "healing")
+  local taken, avoidable = Diff(me, meBase, "taken"), Diff(me, meBase, "avoidable")
   local id = ns.GetPlayerIdentity()
   local _, classFile = UnitClass("player")
 
   local run = {
     t = GetServerTime(), season = MPP_DATA.season, map = map, level = level,
     timed = onTime and true or false, upgrades = onTime and (upgrades or 1) or 0, dur = dur,
-    dps = (dmg and dur and dur > 0) and math.floor(dmg / dur + 0.5) or nil,
+    dps = PerSec(damage), hps = PerSec(healing),
+    deaths = Diff(me, meBase, "deaths"), interrupts = Diff(me, meBase, "interrupts"),
+    avoidPct = (taken and taken > 0 and avoidable) and (avoidable / taken * 100) or nil,
     specID = id.specID, spec = id.specName, className = id.className, classFile = classFile,
+    role = id.role == "healer" and "healer" or (id.role == "tank" and "tank" or "dps"),
     hero = id.hero, src = "live", approx = (base == nil) or nil,
   }
+
+  -- Group members (everyone but you who the meter saw)
+  if snap then
+    local group = {}
+    for name, e in pairs(snap) do
+      if name ~= "me" then
+        local b = base and base[name]
+        group[#group + 1] = {
+          name = name, classFile = e.classFile, specID = SpecFromIcon(e.specIcon),
+          dps = PerSec(Diff(e, b, "damage")), hps = PerSec(Diff(e, b, "healing")),
+        }
+      end
+    end
+    table.sort(group, function(a, b2) return (a.dps or 0) > (b2.dps or 0) end)
+    if #group > 0 then run.group = group end
+  end
+
   table.insert(ns.LiveRuns(), run)
   MPP_DB.activeKey = nil
+  if ns.OnRunRecorded then ns.OnRunRecorded(run) end
   if MPP_DB.popup ~= false then ns.ShowRunPopup(run) end
 end
 
@@ -411,7 +680,7 @@ ev:SetScript("OnEvent", function(_, event)
     MPP_DB.activeKey = {
       map = C_ChallengeMode.GetActiveChallengeMapID and C_ChallengeMode.GetActiveChallengeMapID(),
       level = level, start = GetServerTime(),
-      base = (not InCombatLockdown()) and PlayerDamageTotal() or nil,
+      snap = (not InCombatLockdown()) and MeterSnapshot() or nil,
     }
   elseif event == "CHALLENGE_MODE_RESET" then
     MPP_DB.activeKey = nil

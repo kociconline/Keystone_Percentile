@@ -21,12 +21,23 @@ Holy       Top 7.3%   ~#1,838 / 25,000
 
 - **End-of-key pop-up:** your DPS and your Top X% among Warcraft Logs players of your spec, in that dungeon, at that key level
 - **See the gap:** a bar from 0 to the #1 run with the 50/25/10/1% marks, and how much more DPS each goal needs
+- **Healers are ranked on HPS**, so every role gets a fair comparison
+- **What happened:** deaths, avoidable damage taken and interrupts, compared with your own average
+- **Your whole group** ranked against players of their own spec
+- **Share** a run to group or guild chat with one click
 - **Run history:** every key you've run, filterable by season, dungeon and spec, sortable by date, rank or DPS. Click any run to reopen its summary.
 - **Your old logs too:** with the optional script, every run you've uploaded to Warcraft Logs is imported with its official rank
 
+## Progress and goals
+
+- **Rating graph:** your rating over the last 30 days or the whole season, with "this week: +42 rating · Top 9.4% → Top 8.6%"
+- **Next keys:** which dungeon to push next, about how much rating it gives, and your new Top % if you time it
+
 ## Commands
 
-`/mpp runs` opens your run history, `/mpp last` reopens the last summary, and `/mpp` prints your rating percentiles. Options: `hide`, `show`, `lock`, `reset`, `tooltips`, `popup`, `region`.
+`/mpp runs`, `/mpp progress` and `/mpp next` open the history window's tabs, `/mpp last` reopens the last summary, and `/mpp config` opens the settings. Settings are also under Options > AddOns, and in the addon dropdown by the minimap.
+
+Available in English, Deutsch, Français and Русский.
 
 ## Data
 

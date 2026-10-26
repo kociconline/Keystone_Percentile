@@ -3,7 +3,7 @@
 Two things, chess.com style:
 
 1. **Where your Mythic+ rating ranks**: Top X% overall, for your role, your class and your spec.
-2. **How your DPS ranks in every key**: a pop-up when the key ends, and a history of all your runs, compared with Warcraft Logs players of the same spec in the same dungeon and key level.
+2. **How your DPS ranks in every key** (HPS for healers): a pop-up when the key ends, and a history of all your runs, compared with Warcraft Logs players of the same spec in the same dungeon and key level.
 
 ## What you see in game
 
@@ -18,9 +18,19 @@ Holy                Top 7.3%   ~#1,838 / 25,000
 Herald of the Sun   —          no ranking data
 ```
 
-**End-of-key pop-up:** your DPS, your Top X% among logged runs of your spec at that dungeon and level, a bar from 0 to the #1 run with the 50/25/10/1% marks, and how much more DPS each goal needs.
+**End-of-key pop-up:**
+- Your DPS (HPS for healers), and your Top X% among logged runs of your spec at that dungeon and level.
+- A bar from 0 to the #1 run with the 50/25/10/1% marks, and how much more each goal needs.
+- What happened: deaths, share of your damage taken that was avoidable, and interrupts, compared with your own average.
+- Your whole group, each ranked against players of their own spec.
+- A Share button: click posts to group chat, shift-click to guild chat.
 
-**Run history** (`/mpp runs`): every key you've done, with result, DPS, rank and a bar against #1. Filter by season, dungeon and spec, and sort by date, rank or DPS. A star marks your best run per dungeon. Click any run to reopen its summary.
+**History window** (click the panel, or `/mpp runs`), with three tabs:
+- **Runs:** every key you've done, with result, DPS or HPS, rank and a bar against #1. Filter by season, dungeon and spec, and sort by date, rank or amount. A star marks your best run per dungeon. Click any run to reopen its summary.
+- **Progress:** a graph of your rating over the last 30 days or the whole season, coloured by percentile, with your change this week and this month ("+42 rating · Top 9.4% → Top 8.6%"). Your rating is saved once a day while you play, so the graph starts after two days.
+- **Next keys:** for every dungeon, the key level to run next, about how much rating timing it would give, and your new Top % overall and for your spec. Estimates are fitted from your own dungeon scores.
+
+**Settings** are under Options > AddOns > M+ Percentile, or right-click the addon's icon in the addon dropdown by the minimap.
 
 Ranks marked `~` are estimates from benchmarks. Ranks without `~` are official Warcraft Logs ranks for uploaded runs.
 
@@ -32,10 +42,12 @@ Addons can't go online, so `tools/update_data.py` downloads the data and writes 
 |---|---|---|
 | Rating cutoffs per region, role, class, spec | Raider.IO | nothing |
 | Your exact Raider.IO ranks | Raider.IO | `tools/characters.json` |
-| DPS benchmarks per dungeon, spec, key level | Warcraft Logs | API key |
+| DPS (HPS for healers) benchmarks per dungeon, spec, key level | Warcraft Logs | API key |
 | Your past runs, with official ranks | Warcraft Logs | API key + `tools/characters.json` |
 
-Your DPS for live runs comes from the game's built-in damage meter. It's read right after the key ends, because the game hides meter values from addons during combat.
+Your DPS, healing, deaths, avoidable damage and interrupts for live runs come from the game's built-in damage meter. They're read right after the key ends, because the game hides meter values from addons during combat.
+
+The interface is in English, German, French and Russian.
 
 **Hero talents:** no public source ranks M+ by hero talent, so that row shows only the name.
 
@@ -71,6 +83,9 @@ Warcraft Logs limits free keys to a number of points per hour. The script stops 
 |---|---|
 | `/mpp` | Print the rating rows in chat |
 | `/mpp runs` | Open or close the run history |
+| `/mpp progress` | Open the rating graph |
+| `/mpp next` | Open the next-key suggestions |
+| `/mpp config` | Open the settings |
 | `/mpp last` | Reopen the last run's summary |
 | `/mpp popup` | Turn the end-of-key pop-up on or off |
 | `/mpp hide` / `show` | Toggle the rating panel |
@@ -84,7 +99,7 @@ Warcraft Logs limits free keys to a number of points per hour. The script stops 
 Releases are built by the BigWigs packager on GitHub Actions:
 
 - `daily-data.yml` runs every day at 08:23 UTC. If the data changed, it commits the new `Data.lua` and benchmark cache, tags `vX.Y.Z-data.YYYYMMDD` and uploads to every site.
-- `release.yml` runs when you push a version tag yourself (for example `v3.1.0`) after changing code.
+- `release.yml` runs when you push a version tag yourself (for example `v4.1.0`) after changing code.
 
 One-time setup:
 
@@ -98,4 +113,4 @@ One-time setup:
    Leave out any site you don't use.
 3. In the GitHub repository, under Settings > Secrets and variables > Actions, add `CF_API_KEY`, `WAGO_API_TOKEN`, `WOWI_API_TOKEN`, and `WCL_CLIENT_ID` and `WCL_CLIENT_SECRET` for the Warcraft Logs benchmarks.
 4. Under Settings > Actions > General, set workflow permissions to "Read and write".
-5. Push a first tag: `git tag v3.0.0 && git push origin v3.0.0`.
+5. Push a first tag: `git tag v4.0.0 && git push origin v4.0.0`.

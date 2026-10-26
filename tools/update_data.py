@@ -159,7 +159,7 @@ def main():
     ap.add_argument("--regions", default=",".join(ALL_REGIONS), help="e.g. eu or us,eu")
     ap.add_argument("--chars", default=os.path.join(HERE, "characters.json"))
     ap.add_argument("--no-wcl", action="store_true", help="skip Warcraft Logs")
-    ap.add_argument("--no-benchmarks", action="store_true", help="import your runs only")
+    ap.add_argument("--no-benchmarks", action="store_true", help="import your runs only (no DPS/HPS benchmarks)")
     ap.add_argument("--levels", default="10-20", help="key levels to benchmark, e.g. 10-20 or 12,14,16")
     ap.add_argument("--wcl-budget", type=int, default=2500, help="max Warcraft Logs points to spend")
     ap.add_argument("--debug", action="store_true")
@@ -240,6 +240,7 @@ def main():
                         for sid, label in spec_labels.items():
                             if wcl.norm(label) == want:
                                 run["specID"] = sid
+                                run["role"] = wcl.role_for_spec(sid)
                                 break
                     if run.get("map") and run.get("level") and run.get("specID"):
                         priority.add((run["map"], run["specID"], run["level"]))

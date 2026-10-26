@@ -24,8 +24,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CLASS_NAMES = ["Death Knight", "Demon Hunter", "Druid", "Evoker", "Hunter", "Mage", "Monk",
                "Paladin", "Priest", "Rogue", "Shaman", "Warlock", "Warrior"]
 
-# Percentile anchors stored per benchmark: top X% -> DPS at that rank.
+# Percentile anchors stored per benchmark: top X% -> amount at that rank.
 ANCHORS = [1, 10, 25, 50, 75]
+
+# Healers are ranked on healing per second, everyone else on damage.
+HEALER_SPECS = {65, 105, 256, 257, 264, 270, 1468}
+TANK_SPECS = {66, 73, 104, 250, 268, 581}
+
+
+def metric_for_spec(spec_id):
+    return "hps" if spec_id in HEALER_SPECS else "dps"
+
+
+def role_for_spec(spec_id):
+    if spec_id in HEALER_SPECS: return "healer"
+    if spec_id in TANK_SPECS: return "tank"
+    return "dps"
 
 DEBUG = False
 
@@ -162,7 +176,8 @@ def import_character_runs(api, char, zones, dungeon_map):
         if not z["encounters"]:
             continue
         fields = "\n".join(
-            f'e{e["id"]}: encounterRankings(encounterID: {e["id"]}, metric: dps)' for e in z["encounters"])
+            f'd{e["id"]}: encounterRankings(encounterID: {e["id"]}, metric: dps)\n'
+            f'h{e["id"]}: encounterRankings(encounterID: {e["id"]}, metric: hps)' for e in z["encounters"])
         q = f"""query($n:String!,$s:String!,$r:String!) {{ characterData {{
             character(name:$n, serverSlug:$s, serverRegion:$r) {{ {fields} }} }} }}"""
         try:
@@ -178,29 +193,37 @@ def import_character_runs(api, char, zones, dungeon_map):
             return runs
         found = 0
         for e in z["encounters"]:
-            block = ch.get(f'e{e["id"]}') or {}
-            ranks = block.get("ranks") or []
-            if ranks and found == 0:
-                log_debug(f"rank row ({e['name']})", ranks[0])
-            for r in ranks:
-                amount, t = row_amount(r), row_time_ms(r)
-                if amount is None or t is None:
-                    continue
-                rep = r.get("report") or {}
-                runs.append({
-                    "t": t // 1000,
-                    "season": z["name"],
-                    "dungeon": e["name"],
-                    "map": dungeon_map.get(norm(e["name"])),
-                    "level": row_level(r),
-                    "dps": round(amount, 1),
-                    "pct": r.get("rankPercent") if isinstance(r.get("rankPercent"), (int, float)) else None,
-                    "spec": row_spec(r),
-                    "dur": (r.get("duration") or 0) // 1000 or None,
-                    "report": f'{rep.get("code")}#{rep.get("fightID")}' if rep.get("code") else None,
-                    "src": "logs",
-                })
-                found += 1
+            by_run = {}
+            for metric, alias in (("dps", "d"), ("hps", "h")):
+                ranks = (ch.get(f'{alias}{e["id"]}') or {}).get("ranks") or []
+                if ranks and found == 0:
+                    log_debug(f"{metric} rank row ({e['name']})", ranks[0])
+                for r in ranks:
+                    amount, t = row_amount(r), row_time_ms(r)
+                    if amount is None or t is None:
+                        continue
+                    rep = r.get("report") or {}
+                    key = (rep.get("code"), rep.get("fightID")) if rep.get("code") else ("t", t // 60000)
+                    run = by_run.get(key)
+                    if not run:
+                        run = by_run[key] = {
+                            "t": t // 1000,
+                            "season": z["name"],
+                            "dungeon": e["name"],
+                            "map": dungeon_map.get(norm(e["name"])),
+                            "level": row_level(r),
+                            "spec": row_spec(r),
+                            "dur": (r.get("duration") or 0) // 1000 or None,
+                            "report": f'{rep.get("code")}#{rep.get("fightID")}' if rep.get("code") else None,
+                            "src": "logs",
+                        }
+                    pct = r.get("rankPercent") if isinstance(r.get("rankPercent"), (int, float)) else None
+                    if metric == "dps":
+                        run["dps"], run["pct"] = round(amount, 1), pct
+                    else:
+                        run["hps"], run["hpct"] = round(amount, 1), pct
+            runs.extend(by_run.values())
+            found += len(by_run)
         if found:
             print(f"    {z['name']}: {found} ranked runs")
     runs.sort(key=lambda x: x["t"])
@@ -219,11 +242,11 @@ def split_spec_label(label):
     return None, None
 
 
-def _page(api, enc_id, cls, spec, level, pages):
+def _page(api, enc_id, cls, spec, level, pages, metric="dps"):
     """Fetch several ranking pages in one request (GraphQL aliases)."""
     parts = "\n".join(
         f'p{p}: characterRankings(className: "{cls}", specName: "{spec}", bracket: {level}, '
-        f'metric: dps, page: {p})' for p in pages)
+        f'metric: {metric}, page: {p})' for p in pages)
     d = api.query(f"{{ worldData {{ encounter(id: {enc_id}) {{ {parts} }} }} }}")
     enc = (d.get("worldData") or {}).get("encounter") or {}
     out = {}
@@ -234,12 +257,12 @@ def _page(api, enc_id, cls, spec, level, pages):
     return out
 
 
-def benchmark_one(api, enc_id, cls, spec, level, old=None):
+def benchmark_one(api, enc_id, cls, spec, level, old=None, metric="dps"):
     """Returns {"top":..,"n":..,"lp":..,"p1":..,...} or None.
     Usually 2 requests when a previous result (old) gives the last page."""
     guess = (old or {}).get("lp")
     first_pages = [1] + ([guess, guess + 1] if guess and guess > 1 else [])
-    got0 = _page(api, enc_id, cls, spec, level, first_pages)
+    got0 = _page(api, enc_id, cls, spec, level, metric=metric, pages=first_pages)
     rows, more = got0[1]
     if not rows:
         return None
@@ -263,7 +286,7 @@ def benchmark_one(api, enc_id, cls, spec, level, old=None):
     elif more:
         lo, hi, probe = 1, None, max(2, guess or 2)
         while hi is None:
-            r, m = _page(api, enc_id, cls, spec, level, [probe])[probe]
+            r, m = _page(api, enc_id, cls, spec, level, metric=metric, pages=[probe])[probe]
             if not r:
                 hi = probe
             elif not m:
@@ -275,7 +298,7 @@ def benchmark_one(api, enc_id, cls, spec, level, old=None):
                     hi = probe
         while hi - lo > 1:
             mid = (lo + hi) // 2
-            r, m = _page(api, enc_id, cls, spec, level, [mid])[mid]
+            r, m = _page(api, enc_id, cls, spec, level, metric=metric, pages=[mid])[mid]
             if not r:
                 hi = mid
             else:
@@ -302,7 +325,7 @@ def benchmark_one(api, enc_id, cls, spec, level, old=None):
     got = {1: (rows, more)}
     pages = [p for p in pages if p not in got]
     for i in range(0, len(pages), 5):
-        got.update(_page(api, enc_id, cls, spec, level, pages[i:i + 5]))
+        got.update(_page(api, enc_id, cls, spec, level, metric=metric, pages=pages[i:i + 5]))
     for a, (p, idx) in wanted.items():
         rows_p = (got.get(p) or ([], False))[0]
         if rows_p:
@@ -346,13 +369,14 @@ def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, prio
             break
         try:
             old = ((out.get(map_id) or {}).get(spec_id) or {}).get(lv)
-            b = benchmark_one(api, enc_id, cls, spec, lv, old)
+            metric = metric_for_spec(spec_id)
+            b = benchmark_one(api, enc_id, cls, spec, lv, old, metric=metric)
         except RuntimeError as e:
             print(f"    Stopped: {e}")
             break
         done += 1
         if b:
-            b["u"] = now
+            b["u"], b["m"] = now, metric
             out.setdefault(map_id, {}).setdefault(spec_id, {})[lv] = b
     else:
         if jobs:

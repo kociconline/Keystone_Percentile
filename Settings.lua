@@ -1,0 +1,158 @@
+-- M+ Percentile: Options > AddOns page, addon compartment button, and
+-- keeping saved data small.
+local ADDON, ns = ...
+local L = ns.L
+
+local REGIONS = { false, "us", "eu", "kr", "tw" } -- false = auto
+local MAX_RUNS = 1500
+
+---------------------------------------------------------------------------
+-- Settings page
+---------------------------------------------------------------------------
+local page = CreateFrame("Frame")
+page:Hide()
+local category
+
+local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+title:SetPoint("TOPLEFT", 16, -16)
+title:SetText("M+ Percentile")
+local sub = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+sub:SetText(L["Where your Mythic+ rating and DPS rank, chess.com style."])
+
+local y = -70
+local checks = {}
+
+-- get/set read and write MPP_DB; onChange runs after a change.
+local function Check(label, tip, get, set)
+  local cb = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+  cb:SetPoint("TOPLEFT", 16, y)
+  local text = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  text:SetPoint("LEFT", cb, "RIGHT", 4, 1)
+  text:SetText(label)
+  cb:SetScript("OnClick", function(self) set(self:GetChecked() and true or false) end)
+  cb:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(label); GameTooltip:AddLine(tip, 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  cb:SetScript("OnLeave", GameTooltip_Hide)
+  cb.get = get
+  checks[#checks + 1] = cb
+  y = y - 30
+end
+
+Check(L["Show rating panel"], L["The small panel with your Top % for overall, role, class and spec."],
+  function() return not MPP_DB.hidden end,
+  function(v) MPP_DB.hidden = not v; ns.RefreshPanel() end)
+Check(L["Lock panel position"], L["Stops the panel from being dragged."],
+  function() return MPP_DB.locked end,
+  function(v) MPP_DB.locked = v end)
+Check(L["Show end-of-key pop-up"], L["Your DPS or HPS rank, the gap to the top, and what happened in the key."],
+  function() return MPP_DB.popup ~= false end,
+  function(v) MPP_DB.popup = v end)
+Check(L["Rank your whole group in the pop-up"], L["Every group member against players of their own spec."],
+  function() return MPP_DB.groupRanks ~= false end,
+  function(v) MPP_DB.groupRanks = v end)
+Check(L["Show Top % on player tooltips"], L["Overall and class percentile for players whose rating the game knows."],
+  function() return MPP_DB.tooltips end,
+  function(v) MPP_DB.tooltips = v end)
+
+y = y - 10
+local regionLabel = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+regionLabel:SetPoint("TOPLEFT", 20, y - 4)
+regionLabel:SetText(L["Region"])
+local regionBtn = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+regionBtn:SetSize(120, 22)
+regionBtn:SetPoint("LEFT", regionLabel, "RIGHT", 12, 0)
+local function RegionText()
+  return MPP_DB.region and MPP_DB.region:upper() or (L["Auto"] .. " (" .. (ns.GetRegion() or "?"):upper() .. ")")
+end
+regionBtn:SetScript("OnClick", function(self)
+  local idx = 1
+  for i, r in ipairs(REGIONS) do if (r or nil) == MPP_DB.region then idx = i end end
+  MPP_DB.region = REGIONS[idx % #REGIONS + 1] or nil
+  self:SetText(RegionText())
+  ns.RefreshPanel()
+end)
+y = y - 44
+
+local historyBtn = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+historyBtn:SetSize(150, 22)
+historyBtn:SetPoint("TOPLEFT", 16, y)
+historyBtn:SetText(L["Open run history"])
+historyBtn:SetScript("OnClick", function() ns.ToggleHistory("runs") end)
+local resetBtn = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+resetBtn:SetSize(150, 22)
+resetBtn:SetPoint("LEFT", historyBtn, "RIGHT", 8, 0)
+resetBtn:SetText(L["Reset panel position"])
+resetBtn:SetScript("OnClick", function() SlashCmdList.MPLUSPERCENTILE("reset") end)
+y = y - 40
+
+local info = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+info:SetPoint("TOPLEFT", 16, y)
+info:SetWidth(560); info:SetJustifyH("LEFT")
+
+page:SetScript("OnShow", function()
+  for _, cb in ipairs(checks) do cb:SetChecked(cb.get() and true or false) end
+  regionBtn:SetText(RegionText())
+  local nb = 0
+  for _, sp in pairs(MPP_DATA.dps or {}) do for _, lv in pairs(sp) do for _ in pairs(lv) do nb = nb + 1 end end end
+  local imported = 0
+  for _, list in pairs(MPP_DATA.imported or {}) do imported = imported + #list end
+  info:SetText(string.format(L["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /mpp, /mpp runs, /mpp progress, /mpp next, /mpp last"],
+    MPP_DATA.season or "?", MPP_DATA.updatedAt or L["never"], nb, imported))
+end)
+
+function ns.OpenSettings()
+  if category and Settings and Settings.OpenToCategory then
+    Settings.OpenToCategory(category:GetID())
+  end
+end
+
+---------------------------------------------------------------------------
+-- Addon compartment (the addon icon dropdown by the minimap)
+---------------------------------------------------------------------------
+function MPlusPercentile_OnCompartmentClick(_, button)
+  if button == "RightButton" then ns.OpenSettings() else ns.ToggleHistory() end
+end
+
+function MPlusPercentile_OnCompartmentEnter(_, frame)
+  GameTooltip:SetOwner(frame, "ANCHOR_LEFT")
+  GameTooltip:AddLine("M+ Percentile")
+  GameTooltip:AddLine(L["Left-click: run history"], 1, 1, 1)
+  GameTooltip:AddLine(L["Right-click: settings"], 1, 1, 1)
+  GameTooltip:Show()
+end
+
+function MPlusPercentile_OnCompartmentLeave()
+  GameTooltip:Hide()
+end
+
+---------------------------------------------------------------------------
+-- Keep saved data small: full details for the current season, slimmer
+-- records for older ones, and at most MAX_RUNS runs per character.
+---------------------------------------------------------------------------
+local function Prune()
+  local current = MPP_DATA.season
+  for _, runs in pairs(MPP_RUNS or {}) do
+    for _, r in ipairs(runs) do
+      if current and r.season and r.season ~= current then
+        r.group, r.hero, r.approx = nil, nil, nil
+      end
+    end
+    while #runs > MAX_RUNS do table.remove(runs, 1) end
+  end
+end
+
+local ev = CreateFrame("Frame")
+ev:RegisterEvent("ADDON_LOADED")
+ev:SetScript("OnEvent", function(self, _, name)
+  if name ~= ADDON then return end
+  self:UnregisterEvent("ADDON_LOADED")
+  Prune()
+  if Settings and Settings.RegisterCanvasLayoutCategory then
+    category = Settings.RegisterCanvasLayoutCategory(page, "M+ Percentile")
+    Settings.RegisterAddOnCategory(category)
+  end
+end)

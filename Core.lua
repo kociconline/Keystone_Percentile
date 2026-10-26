@@ -1,10 +1,11 @@
 -- M+ Percentile: "Top X%" for your Mythic+ rating, like chess.com.
 -- Shows overall, role, class and spec percentiles from Raider.IO data.
 local ADDON, ns = ...
+local L = ns.L
 
 local REGION_KEYS = { [1] = "us", [2] = "kr", [3] = "eu", [4] = "tw", [5] = "cn" }
 local ROLE_KEYS = { DAMAGER = "dps", HEALER = "healer", TANK = "tank" }
-local ROLE_NAMES = { dps = "DPS", healer = "Healer", tank = "Tank" }
+local ROLE_NAMES = { dps = L["DPS"], healer = L["Healer"], tank = L["Tank"] }
 local STALE_SECONDS = 7 * 24 * 3600
 
 ---------------------------------------------------------------------------
@@ -149,6 +150,8 @@ local function ExactChar(name, realm, score)
   if c and c.score and math.abs(c.score - score) < 1 then return c end
 end
 
+ns.EvaluateCohort, ns.ExactChar, ns.GetRegion, ns.GetScore = Evaluate, ExactChar, GetRegion, GetScore
+
 -- Rows shown for the player: { label, result } (result may be nil)
 local function BuildRows(score)
   local region = GetRegion()
@@ -156,7 +159,7 @@ local function BuildRows(score)
   local char = ExactChar(UnitName("player"), GetRealmName(), score)
   local rows = {}
 
-  rows[#rows + 1] = { "Overall", Evaluate(region, "overall", "overall", score, char) }
+  rows[#rows + 1] = { L["Overall"], Evaluate(region, "overall", "overall", score, char) }
   if id.role then
     rows[#rows + 1] = { ROLE_NAMES[id.role], Evaluate(region, id.role, id.role, score, char) }
   end
@@ -167,24 +170,24 @@ local function BuildRows(score)
     rows[#rows + 1] = { id.specName, Evaluate(region, "spec:" .. id.specID, "spec_" .. id.specID, score, char) }
   end
   if id.hero then
-    rows[#rows + 1] = { id.hero, nil, "no ranking data" }
+    rows[#rows + 1] = { id.hero, nil, L["no ranking data"] }
   end
   return rows, region
 end
 
 local function PctText(res)
   if not res then return "|cff777777—|r" end
-  local s = "Top " .. FormatPct(res.pct) .. (res.capped and "+" or "")
+  local s = string.format(L["Top %s"], FormatPct(res.pct) .. (res.capped and "+" or ""))
   return string.format("|c%s%s|r", PctColor(res.pct), s)
 end
 
 local function RankText(res, fallback)
-  if not res then return "|cff777777" .. (fallback or "no data") .. "|r" end
+  if not res then return "|cff777777" .. (fallback or L["no data"]) .. "|r" end
   if not res.rank or not res.pop then return "" end
   if res.exact then
     return string.format("|cff00ff96#%s|r |cff999999/ %s|r", Num(res.rank), Num(res.pop))
   elseif res.capped then
-    return string.format("|cff999999top %s / %s|r", Num(res.rank), Num(res.pop))
+    return string.format("|cff999999%s %s / %s|r", L["top"], Num(res.rank), Num(res.pop))
   end
   return string.format("|cff999999~#%s / %s|r", Num(res.rank), Num(res.pop))
 end
@@ -242,20 +245,20 @@ panel:SetScript("OnEnter", function(self)
   GameTooltip:AddLine("M+ Percentile: " .. (GetRegion() or "?"):upper())
   if MPP_DATA.season then GameTooltip:AddLine(MPP_DATA.season, 0.7, 0.7, 0.7) end
   GameTooltip:AddLine(" ")
-  GameTooltip:AddLine("Next goal per group", 1, 0.82, 0)
+  GameTooltip:AddLine(L["Next goal per group"], 1, 0.82, 0)
   for _, row in ipairs(lastRows or {}) do
     local res = row[2]
     if res and res.goalPct then
-      GameTooltip:AddDoubleLine(row[1], string.format("+%d to Top %s", res.need, FormatPct(res.goalPct)),
+      GameTooltip:AddDoubleLine(row[1], string.format(L["+%d to Top %s"], res.need, FormatPct(res.goalPct)),
         1, 1, 1, 1, 0.82, 0)
     elseif res then
-      GameTooltip:AddDoubleLine(row[1], "above every cutoff", 1, 1, 1, 0, 1, 0.6)
+      GameTooltip:AddDoubleLine(row[1], L["above every cutoff"], 1, 1, 1, 0, 1, 0.6)
     end
   end
   GameTooltip:AddLine(" ")
-  GameTooltip:AddLine("|cff00ff96#rank|r = exact from Raider.IO, ~#rank = estimate", 0.6, 0.6, 0.6, true)
-  GameTooltip:AddLine("Data: " .. (MPP_DATA.updatedAt or "never"), 0.6, 0.6, 0.6)
-  GameTooltip:AddLine("Click for run history. Drag to move.", 0.6, 0.6, 0.6)
+  GameTooltip:AddLine(L["|cff00ff96#rank|r = exact from Raider.IO, ~#rank = estimate"], 0.6, 0.6, 0.6, true)
+  GameTooltip:AddLine(L["Data:"] .. " " .. (MPP_DATA.updatedAt or L["never"]), 0.6, 0.6, 0.6)
+  GameTooltip:AddLine(L["Click for run history. Drag to move."], 0.6, 0.6, 0.6)
   GameTooltip:Show()
 end)
 panel:SetScript("OnLeave", GameTooltip_Hide)
@@ -267,8 +270,8 @@ local function RefreshPanel()
   local rows, region = BuildRows(score)
   lastRows = rows
 
-  panel.header:SetText(string.format("|c%s%s|r  |cff999999M+ rating, %s|r",
-    ScoreColor(score), Num(score), (region or "?"):upper()))
+  panel.header:SetText(string.format("|c%s%s|r  |cff999999%s, %s|r",
+    ScoreColor(score), Num(score), L["M+ rating"], (region or "?"):upper()))
 
   -- Fill the three columns, then measure them to line everything up.
   local w1, w2, w3 = 0, 0, 0
@@ -292,9 +295,9 @@ local function RefreshPanel()
 
   local footer
   if not rows[1][2] then
-    footer = "|cffff5555No ladder data for " .. (region or "?"):upper() .. ". Run tools/update_data.py.|r"
+    footer = "|cffff5555" .. string.format(L["No ladder data for %s yet."], (region or "?"):upper()) .. "|r"
   elseif (MPP_DATA.updatedEpoch or 0) > 0 and GetServerTime() - MPP_DATA.updatedEpoch > STALE_SECONDS then
-    footer = "|cffff5555Data is over 7 days old.|r"
+    footer = "|cffff5555" .. L["Data is over 7 days old."] .. "|r"
   end
   local height = 8 + panel.header:GetStringHeight() + 6 + #rows * ROW_H
   if footer then
@@ -311,6 +314,8 @@ local function RefreshPanel()
   panel:SetSize(width, height + 8)
   panel:Show()
 end
+
+ns.RefreshPanel = RefreshPanel
 
 ---------------------------------------------------------------------------
 -- Unit tooltips: overall and class percentile for other players
@@ -384,6 +389,12 @@ SlashCmdList.MPLUSPERCENTILE = function(msg)
   elseif cmd == "tooltips" then
     MPP_DB.tooltips = not MPP_DB.tooltips
     print(tag .. "tooltips " .. (MPP_DB.tooltips and "on" or "off"))
+  elseif cmd == "config" or cmd == "options" or cmd == "settings" then
+    ns.OpenSettings()
+  elseif cmd == "progress" then
+    ns.ToggleHistory("progress")
+  elseif cmd == "next" then
+    ns.ToggleHistory("next")
   elseif cmd == "runs" or cmd == "history" then
     ns.ToggleHistory()
   elseif cmd == "last" then
@@ -402,6 +413,6 @@ SlashCmdList.MPLUSPERCENTILE = function(msg)
     for _, row in ipairs(rows) do
       print(string.format("  %s: %s  %s", row[1], PctText(row[2]), RankText(row[2], row[3])))
     end
-    print("|cff888888/mpp runs, last, show, hide, lock, reset, tooltips, popup, region <us/eu/kr/tw/auto>|r")
+    print("|cff888888/mpp runs, progress, next, last, config|r")
   end
 end

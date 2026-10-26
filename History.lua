@@ -1,5 +1,6 @@
 -- M+ Percentile: run history window (/mpp runs, or click the rating panel).
 local ADDON, ns = ...
+local L = ns.L
 
 local W, ROW_H, VISIBLE = 600, 22, 14
 local COLS = { -- x offset, width, justify
@@ -9,7 +10,7 @@ local COLS = { -- x offset, width, justify
 
 local state = { dungeon = nil, spec = nil, season = nil, sort = "date" }
 local SORTS = { "date", "rank", "dps" }
-local SORT_NAMES = { date = "Sort: date", rank = "Sort: rank", dps = "Sort: DPS" }
+local SORT_NAMES = { date = L["Sort: date"], rank = L["Sort: rank"], dps = L["Sort: DPS / HPS"] }
 
 ---------------------------------------------------------------------------
 -- Window
@@ -33,15 +34,53 @@ close:SetPoint("TOPRIGHT", 2, 2)
 
 win.title = win:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 win.title:SetPoint("TOPLEFT", 12, -12)
-win.title:SetText("Run history")
-win.count = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-win.count:SetPoint("TOPRIGHT", -34, -16)
+win.title:SetText("M+ Percentile")
+
+-- Each tab is a view frame filling the window; only one is shown.
+local tabs, views = {}, {}
+local function NewView(key, label, refresh)
+  local v = CreateFrame("Frame", nil, win)
+  v:SetPoint("TOPLEFT", 0, -34); v:SetPoint("BOTTOMRIGHT")
+  v:Hide()
+  v.refresh = refresh
+  views[key] = v
+  local b = CreateFrame("Button", nil, win, "BackdropTemplate")
+  b:SetSize(84, 20)
+  b:SetPoint("TOPLEFT", 150 + (#tabs) * 88, -10)
+  b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+  b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  b.text:SetPoint("CENTER"); b.text:SetText(label)
+  b.key = key
+  b:SetScript("OnClick", function() ns.ShowHistoryTab(key) end)
+  tabs[#tabs + 1] = b
+  return v
+end
+ns.NewHistoryView = NewView
+
+function ns.ShowHistoryTab(key)
+  MPP_DB.historyTab = key
+  for k, v in pairs(views) do
+    if k == key then v:Show(); if v.refresh then v.refresh() end else v:Hide() end
+  end
+  for _, b in ipairs(tabs) do
+    local on = b.key == key
+    b:SetBackdropColor(on and 0.25 or 0.08, on and 0.2 or 0.08, on and 0.05 or 0.1, 1)
+    b:SetBackdropBorderColor(on and 0.8 or 0.3, on and 0.65 or 0.3, on and 0.1 or 0.32, 1)
+  end
+end
+
+local Refresh -- defined below
+local runsView = NewView("runs", L["Runs"], function() Refresh() end)
+ns.HistoryWindow = win
+
+win.count = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+win.count:SetPoint("TOPRIGHT", -34, 18)
 
 -- Filter buttons cycle through their options on click (right-click goes back).
 local function FilterButton(x, width)
-  local b = CreateFrame("Button", nil, win, "BackdropTemplate")
+  local b = CreateFrame("Button", nil, runsView, "BackdropTemplate")
   b:SetSize(width, 20)
-  b:SetPoint("TOPLEFT", x, -38)
+  b:SetPoint("TOPLEFT", x, -4)
   b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
   b:SetBackdropColor(0.1, 0.1, 0.12, 1)
   b:SetBackdropBorderColor(0.3, 0.3, 0.32, 1)
@@ -58,35 +97,35 @@ win.fDungeon = FilterButton(148, 160)
 win.fSpec = FilterButton(314, 110)
 win.fSort = FilterButton(430, 80)
 
-win.summary = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-win.summary:SetPoint("TOPRIGHT", -14, -42)
+win.summary = runsView:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+win.summary:SetPoint("TOPRIGHT", -14, -8)
 
 -- Column headers
-local headers = { { "date", "Date" }, { "dungeon", "Dungeon" }, { "result", "Result" },
-  { "dps", "DPS" }, { "rank", "Rank" }, { "bar", "vs #1" } }
+local headers = { { "date", L["Date"] }, { "dungeon", L["Dungeon"] }, { "result", L["Result"] },
+  { "dps", L["DPS / HPS"] }, { "rank", L["Rank"] }, { "bar", L["vs #1"] } }
 for _, h in ipairs(headers) do
   local c = COLS[h[1]]
-  local fs = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  fs:SetPoint("TOPLEFT", c[1], -68)
+  local fs = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  fs:SetPoint("TOPLEFT", c[1], -34)
   fs:SetWidth(c[2]); fs:SetJustifyH(c[3] or "LEFT")
   fs:SetText(h[2])
 end
 
 -- Scrolling list
-local scroll = CreateFrame("ScrollFrame", "MPlusPercentileHistoryScroll", win, "UIPanelScrollFrameTemplate")
-scroll:SetPoint("TOPLEFT", 0, -84)
+local scroll = CreateFrame("ScrollFrame", "MPlusPercentileHistoryScroll", runsView, "UIPanelScrollFrameTemplate")
+scroll:SetPoint("TOPLEFT", 0, -50)
 scroll:SetPoint("BOTTOMRIGHT", -28, 30)
 local content = CreateFrame("Frame", nil, scroll)
 content:SetSize(W - 28, 1)
 scroll:SetScrollChild(content)
 
-win.empty = win:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-win.empty:SetPoint("TOP", 0, -120)
+win.empty = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+win.empty:SetPoint("TOP", 0, -86)
 win.empty:SetWidth(W - 60)
 
-win.footer = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+win.footer = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 win.footer:SetPoint("BOTTOMLEFT", 12, 10)
-win.footer:SetText("Click a run to open its summary · ★ best run per dungeon · ~ estimated rank")
+win.footer:SetText(L["Click a run to open its summary · ★ best run per dungeon · ~ estimated rank"])
 
 local rows = {}
 local function GetRow(i)
@@ -165,7 +204,7 @@ end
 
 local all = {}
 
-local function Refresh()
+function Refresh()
   all = ns.AllRuns()
   if state.season == nil and not state.seasonTouched then state.season = MPP_DATA.season end
 
@@ -173,9 +212,9 @@ local function Refresh()
   local dungeons = Options(all, function(r) return ns.DungeonName(r) end)
   local specs = Options(all, function(r) return r.spec end)
 
-  win.fSeason.text:SetText(state.season or "All seasons")
-  win.fDungeon.text:SetText(state.dungeon or "All dungeons")
-  win.fSpec.text:SetText(state.spec or "All specs")
+  win.fSeason.text:SetText(state.season or L["All seasons"])
+  win.fDungeon.text:SetText(state.dungeon or L["All dungeons"])
+  win.fSpec.text:SetText(state.spec or L["All specs"])
   win.fSort.text:SetText(SORT_NAMES[state.sort])
   win.fSeason.options, win.fDungeon.options, win.fSpec.options = seasons, dungeons, specs
 
@@ -204,8 +243,9 @@ local function Refresh()
   for _, t in ipairs(tops) do if not bestAll or t < bestAll then bestAll = t end end
   local med = Median(tops)
   if bestAll then
-    win.summary:SetText(string.format("|cff999999Best|r |c%sTop %s|r  |cff999999· Median|r |c%sTop %s|r",
-      ns.PctColor(bestAll), ns.FormatPct(bestAll), ns.PctColor(med), ns.FormatPct(med)))
+    win.summary:SetText(string.format("|cff999999%s|r |c%s%s|r  |cff999999· %s|r |c%s%s|r",
+      L["Best"], ns.PctColor(bestAll), string.format(L["Top %s"], ns.FormatPct(bestAll)),
+      L["Median"], ns.PctColor(med), string.format(L["Top %s"], ns.FormatPct(med))))
   else
     win.summary:SetText("")
   end
@@ -214,10 +254,10 @@ local function Refresh()
   if state.sort == "rank" then
     table.sort(list, function(a, b) return (a._ev.top or 999) < (b._ev.top or 999) end)
   elseif state.sort == "dps" then
-    table.sort(list, function(a, b) return (a.dps or 0) > (b.dps or 0) end)
+    table.sort(list, function(a, b) return (a._ev.amount or 0) > (b._ev.amount or 0) end)
   end
 
-  win.count:SetText(string.format("%s · %d run%s", state.season or "All seasons", #list, #list == 1 and "" or "s"))
+  win.count:SetText(string.format("%s · %d %s", state.season or L["All seasons"], #list, #list == 1 and L["run"] or L["runs"]))
 
   for i, r in ipairs(list) do
     local row = GetRow(i)
@@ -225,7 +265,7 @@ local function Refresh()
     row.date:SetText("|cffaaaaaa" .. date("%b %d", r.t or 0) .. "|r")
     row.dungeon:SetText(string.format("%s +%s", ns.DungeonName(r), r.level or "?"))
     row.result:SetText(ResultText(r))
-    row.dps:SetText(ns.FormatDPS(r.dps))
+    row.dps:SetText(ns.FormatDPS(r._ev.amount) .. (r._ev.metric == "hps" and " |cff888888H|r" or ""))
     local star = (best[ns.DungeonName(r)] == r) and " |cffffd100★|r" or ""
     row.rank:SetText(ns.TopText(r._ev) .. star)
     if r._ev.ofTop then
@@ -244,8 +284,8 @@ local function Refresh()
 
   if #list == 0 then
     win.empty:SetText(#all == 0
-      and "No runs yet. Finish a key, or import your Warcraft Logs runs with tools/update_data.py."
-      or "No runs match these filters.")
+      and L["No runs yet. Finish a key, or import your Warcraft Logs runs with tools/update_data.py."]
+      or L["No runs match these filters."])
     win.empty:Show()
   else
     win.empty:Hide()
@@ -269,13 +309,17 @@ win.fSort:SetScript("OnClick", function()
   Refresh()
 end)
 
-function ns.ToggleHistory()
-  if win:IsShown() then win:Hide() else Refresh(); win:Show() end
+function ns.ToggleHistory(tab)
+  if win:IsShown() and (not tab or tab == MPP_DB.historyTab) then win:Hide() return end
+  win:Show()
+  ns.ShowHistoryTab(tab or MPP_DB.historyTab or "runs")
 end
 
 -- Keep the window current when a key finishes while it's open.
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 ev:SetScript("OnEvent", function()
-  C_Timer.After(5, function() if win:IsShown() then Refresh() end end)
+  C_Timer.After(5, function()
+    if win:IsShown() then ns.ShowHistoryTab(MPP_DB.historyTab or "runs") end
+  end)
 end)

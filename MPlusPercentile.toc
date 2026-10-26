@@ -5,8 +5,15 @@
 ## Version: @project-version@
 ## SavedVariables: MPP_DB, MPP_RUNS
 ## IconTexture: Interface\Icons\Achievement_ChallengeMode_Gold
+## AddonCompartmentFunc: MPlusPercentile_OnCompartmentClick
+## AddonCompartmentFuncOnEnter: MPlusPercentile_OnCompartmentEnter
+## AddonCompartmentFuncOnLeave: MPlusPercentile_OnCompartmentLeave
+## Category: Dungeons & Raids
 
+Locale.lua
 Data.lua
 Core.lua
 Runs.lua
 History.lua
+Progress.lua
+Settings.lua
