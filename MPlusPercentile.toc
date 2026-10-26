@@ -1,0 +1,10 @@
+## Interface: 120100, 120105
+## Title: M+ Percentile
+## Notes: Shows your Mythic+ rating as "Top X%" overall, by role, class and spec.
+## Author: You
+## Version: @project-version@
+## SavedVariables: MPP_DB
+## IconTexture: Interface\Icons\Achievement_ChallengeMode_Gold
+
+Data.lua
+Core.lua

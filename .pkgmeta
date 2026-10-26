@@ -1,0 +1,10 @@
+package-as: MPlusPercentile
+
+enable-nolib-creation: no
+
+ignore:
+  - .github
+  - README.md
+  - CURSEFORGE.md
+  - tools/characters.json
+  - tools/__pycache__
