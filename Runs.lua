@@ -4,7 +4,7 @@
 local ADDON, ns = ...
 local L = ns.L
 
-local ANCHORS = { 1, 10, 25, 50, 75 } -- benchmark keys p1, p10, ...
+local ANCHORS = { 1, 10, 50 } -- benchmark keys p1, p10, p50 (median); #1 is "top"
 
 ---------------------------------------------------------------------------
 -- Formatting
@@ -22,6 +22,12 @@ local function FormatTime(sec)
   return string.format("%d:%02d", math.floor(sec / 60), math.floor(sec % 60))
 end
 ns.FormatTime = FormatTime
+
+-- Run percentiles with two decimals below 10% and one above, e.g. "Top 5.02%".
+local function RunPct(p)
+  if p < 10 then return string.format("%.2f%%", p) end
+  return string.format("%.1f%%", p)
+end
 
 local function ClassColor(classFile)
   local c = classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
@@ -216,7 +222,7 @@ function ns.Rank(map, specID, level, metric, amount, officialPct)
   if b and b.m and b.m ~= metric then b = nil end
   ev.bench, ev.benchLevel = b, bLevel
   if officialPct then
-    ev.top, ev.exact = math.max(100 - officialPct, 0.1), true
+    ev.top, ev.exact = math.max(100 - officialPct, 0.01), true
   elseif b and amount then
     ev.top = EstimateTop(amount, b)
   end
@@ -236,7 +242,7 @@ end
 function ns.TopText(ev)
   if not ev or not ev.top then return "|cff777777—|r" end
   return string.format("|c%s%s%s|r", ns.PctColor(ev.top), ev.exact and "" or "~",
-    string.format(L["Top %s"], ns.FormatPct(ev.top)))
+    string.format(L["Top %s"], RunPct(ev.top)))
 end
 
 local function AmountLabel(metric, role)
@@ -311,7 +317,7 @@ function ns.ShareText(run)
   if spec ~= "" then parts[#parts + 1] = spec end
   if ev.amount then parts[#parts + 1] = FormatAmount(ev.amount) .. " " .. (ev.metric == "hps" and "HPS" or "DPS") end
   if ev.top then
-    parts[#parts + 1] = (ev.exact and "" or "~") .. string.format(L["Top %s"], ns.FormatPct(ev.top))
+    parts[#parts + 1] = (ev.exact and "" or "~") .. string.format(L["Top %s"], RunPct(ev.top))
       .. (ev.exact and " (Warcraft Logs)" or "")
   end
   return "[Keystone Percentile] " .. table.concat(parts, " · ")
@@ -391,7 +397,7 @@ for i = 1, 6 do
 end
 
 popup.goals = {}
-for i = 1, 3 do popup.goals[i] = { FS("GameFontNormal"), FS("GameFontDisable"), FS("GameFontNormal", "RIGHT") } end
+for i = 1, 4 do popup.goals[i] = { FS("GameFontNormal"), FS("GameFontDisable"), FS("GameFontNormal", "RIGHT") } end
 popup.members = {}
 for i = 1, 5 do popup.members[i] = { FS("GameFontHighlightSmall"), FS("GameFontDisableSmall", "RIGHT"), FS("GameFontHighlightSmall", "RIGHT") } end
 
@@ -477,7 +483,13 @@ function ns.ShowRunPopup(run)
   if ev.amount == nil then
     popup.sub:SetText("|cffff5555" .. L["Couldn't read your damage for this run."] .. "|r")
   elseif ev.exact then
-    popup.sub:SetText(L["Official Warcraft Logs rank for this run"])
+    local n = ev.metric == "hps" and run.hn or run.n
+    if n and run.level then
+      popup.sub:SetText(string.format(L["of %s logged %s runs at +%d"], ns.Num(n),
+        (spec:match("^[^·]+") or ""):gsub("%s+$", ""), run.level))
+    else
+      popup.sub:SetText(L["Official Warcraft Logs rank for this run"])
+    end
   elseif b then
     popup.sub:SetText(string.format(L["of %s logged %s runs at +%d"], ns.Num(b.n or 0), (spec:match("^[^·]+") or ""):gsub("%s+$", ""), ev.benchLevel))
   else
@@ -497,7 +509,7 @@ function ns.ShowRunPopup(run)
     popup.bar:SetColorTexture(HexToRGB(ns.PctColor(ev.top or 100))); popup.bar:Show()
     popup.you:ClearAllPoints(); popup.you:SetPoint("BOTTOM", popup.barBG, "TOPLEFT", frac * BAR_W, 3); popup.you:Show()
     local lastX = -100
-    for i, a in ipairs({ 50, 25, 10, 1 }) do
+    for i, a in ipairs({ 50, 10, 1 }) do
       local v = b["p" .. a]
       if v then
         local x = math.min(v / b.top, 1) * BAR_W
@@ -505,7 +517,7 @@ function ns.ShowRunPopup(run)
         mk.tex:SetColorTexture(HexToRGB(ns.PctColor(a)))
         mk.tex:ClearAllPoints(); mk.tex:SetPoint("TOP", popup.barBG, "TOPLEFT", x, 4); mk.tex:Show()
         if x - lastX > 24 then
-          mk.label:SetText(a .. "%"); mk.label:ClearAllPoints()
+          mk.label:SetText(a == 50 and L["median"] or (a .. "%")); mk.label:ClearAllPoints()
           mk.label:SetPoint("TOP", popup.barBG, "BOTTOMLEFT", x, -4); mk.label:Show()
           lastX = x
         end
@@ -524,12 +536,19 @@ function ns.ShowRunPopup(run)
   -- Goals
   local goals = {}
   if b and ev.amount then
-    for _, a in ipairs({ 10, 1 }) do
+    for _, a in ipairs({ 50, 10, 1 }) do
       local v = b["p" .. a]
       if v then
         local gap = v - ev.amount
-        goals[#goals + 1] = { string.format(L["Top %s"], a .. "%"), FormatAmount(v),
-          gap > 0 and ("+" .. FormatAmount(gap)) or ("|cff1eff00" .. L["reached"] .. "|r") }
+        local label = a == 50 and L["Median"] or string.format(L["Top %s"], a .. "%")
+        local diff
+        if a == 50 then
+          diff = gap > 0 and ("|cffff8080-" .. FormatAmount(gap) .. "|r")
+            or ("|cff1eff00+" .. FormatAmount(-gap) .. "|r")
+        else
+          diff = gap > 0 and ("+" .. FormatAmount(gap)) or ("|cff1eff00" .. L["reached"] .. "|r")
+        end
+        goals[#goals + 1] = { label, FormatAmount(v), diff }
       end
     end
     if b.top then

@@ -6,8 +6,6 @@ local L = ns.L
 -- Brackets a player climbs through. The "next step" is the first one above you.
 local LADDER = { 40, 30, 25, 20, 15, 10, 5, 2, 1, 0.5, 0.1 }
 local MAX_STEPS = 80
-local PLUS = "|TInterface\\Buttons\\UI-PlusButton-Up:14:14|t"
-local MINUS = "|TInterface\\Buttons\\UI-MinusButton-Up:14:14|t"
 
 ---------------------------------------------------------------------------
 -- Route planning
@@ -85,7 +83,7 @@ function ns.PlanRoute(needed)
     steps[#steps + 1] = { map = best.map, level = bt, gain = math.floor(bg + 0.5), total = total }
     best.level, best.timed, best.score = bt, true, best.score + bg
   end
-  return steps, slope, fitted
+  return steps, slope, fitted, byMap
 end
 
 ---------------------------------------------------------------------------
@@ -126,7 +124,7 @@ function ns.Goals(cohortKey)
     end
   end
 
-  local steps, slope, fitted = ns.PlanRoute(maxNeed)
+  local steps, slope, fitted, best = ns.PlanRoute(maxNeed)
   for _, g in ipairs(goals) do
     if g.need > 0 and steps then
       for i, st in ipairs(steps) do
@@ -135,7 +133,8 @@ function ns.Goals(cohortKey)
       g.keysOver = not g.keys
     end
   end
-  return { score = score, pct = pct, goals = goals, steps = steps or {}, slope = slope, fitted = fitted or 0 }
+  return { score = score, pct = pct, goals = goals, steps = steps or {}, slope = slope, fitted = fitted or 0,
+           best = best or {} }
 end
 
 -- Bracket names: "Top 2%", "Top 0.1%" (no trailing ".0").
@@ -174,105 +173,6 @@ end
 ---------------------------------------------------------------------------
 -- Goal list widget, used by the Overview and Goals tabs
 ---------------------------------------------------------------------------
-local function NewGoalList(parent, width)
-  local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
-  local content = CreateFrame("Frame", nil, scroll)
-  content:SetSize(width, 1)
-  scroll:SetScrollChild(content)
-  local o = { scroll = scroll, content = content, width = width, blocks = {}, lines = {}, expanded = {} }
-
-  local function Block(i)
-    if o.blocks[i] then return o.blocks[i] end
-    local b = {}
-    b.label = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    b.note = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    b.value = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    b.value:SetJustifyH("RIGHT")
-    b.barBG = content:CreateTexture(nil, "ARTWORK")
-    b.barBG:SetColorTexture(0.17, 0.19, 0.23, 1)
-    b.bar = content:CreateTexture(nil, "ARTWORK", nil, 1)
-    b.toggle = CreateFrame("Button", nil, content)
-    b.toggle:SetSize(160, 16)
-    b.toggle.text = b.toggle:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    b.toggle.text:SetPoint("LEFT")
-    b.toggle:SetScript("OnClick", function(self)
-      o.expanded[self.pct] = not o.expanded[self.pct]
-      if o.onToggle then o.onToggle() end
-    end)
-    o.blocks[i] = b
-    return b
-  end
-
-  local function Line(i)
-    if o.lines[i] then return o.lines[i] end
-    local l = {
-      content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"),
-      content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"),
-      content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"),
-    }
-    l[1]:SetJustifyH("LEFT"); l[2]:SetJustifyH("RIGHT"); l[3]:SetJustifyH("RIGHT")
-    o.lines[i] = l
-    return l
-  end
-
-  function o:Render(data, expandedDefault)
-    for _, b in pairs(self.blocks) do
-      b.label:Hide(); b.note:Hide(); b.value:Hide(); b.barBG:Hide(); b.bar:Hide(); b.toggle:Hide()
-    end
-    for _, l in pairs(self.lines) do l[1]:Hide(); l[2]:Hide(); l[3]:Hide() end
-    if not data then return 0 end
-    local y, li, W = 0, 0, self.width
-    for i, g in ipairs(data.goals) do
-      local b = Block(i)
-      b.label:SetText(GoalLabel(g)); b.label:ClearAllPoints(); b.label:SetPoint("TOPLEFT", 4, y); b.label:Show()
-      local note = g.isNext and L["next step"] or (g.isTitle and L["season title"] or nil)
-      if note then
-        b.note:SetText(note); b.note:ClearAllPoints()
-        b.note:SetPoint("BOTTOMLEFT", b.label, "BOTTOMRIGHT", 6, 1); b.note:Show()
-      end
-      b.value:SetText(NeedText(g)); b.value:ClearAllPoints(); b.value:SetPoint("TOPRIGHT", -4, y); b.value:Show()
-      y = y - 18
-      b.barBG:ClearAllPoints(); b.barBG:SetPoint("TOPLEFT", 4, y); b.barBG:SetSize(W - 8, 6); b.barBG:Show()
-      b.bar:ClearAllPoints(); b.bar:SetPoint("TOPLEFT", b.barBG, "TOPLEFT")
-      b.bar:SetSize(math.max(1, (W - 8) * (g.progress or 0)), 6)
-      b.bar:SetColorTexture(ns.HexToRGB(ns.PctColor(g.pct)))
-      b.bar:Show()
-      y = y - 12
-
-      if g.need > 0 and g.keys then
-        local open = self.expanded[g.pct]
-        if open == nil then open = expandedDefault end
-        b.toggle.pct = g.pct
-        if self.expanded[g.pct] == nil then self.expanded[g.pct] = open end
-        b.toggle.text:SetText((open and MINUS or PLUS) .. " " .. L["Which keys"])
-        b.toggle:ClearAllPoints(); b.toggle:SetPoint("TOPLEFT", 4, y); b.toggle:Show()
-        y = y - 18
-        if open then
-          for k = 1, g.keys do
-            local st = data.steps[k]
-            li = li + 1
-            local l = Line(li)
-            local name = C_ChallengeMode.GetMapUIInfo and C_ChallengeMode.GetMapUIInfo(st.map) or ("#" .. st.map)
-            l[1]:SetText(string.format("|cff999999%d.|r  %s |cffffd100+%d|r", k, name, st.level))
-            l[2]:SetText(string.format("|cff1eff00+%d|r", st.gain))
-            l[3]:SetText("|cff999999" .. ns.Num(math.floor(data.score + st.total + 0.5)) .. "|r")
-            l[1]:ClearAllPoints(); l[1]:SetPoint("TOPLEFT", 22, y)
-            l[2]:ClearAllPoints(); l[2]:SetPoint("TOPRIGHT", -74, y)
-            l[3]:ClearAllPoints(); l[3]:SetPoint("TOPRIGHT", -4, y)
-            l[1]:Show(); l[2]:Show(); l[3]:Show()
-            y = y - 15
-          end
-          y = y - 4
-        end
-      end
-      y = y - 8
-    end
-    self.content:SetHeight(math.max(1, -y))
-    return -y
-  end
-  return o
-end
-
 local function SlopeNote(data)
   if not data then return "" end
   if data.fitted >= 2 then
@@ -282,22 +182,67 @@ local function SlopeNote(data)
   return L["Assumes about 15 rating per key until you've timed more dungeons. Easiest keys first."]
 end
 
+local function MapName(map)
+  return (C_ChallengeMode.GetMapUIInfo and C_ChallengeMode.GetMapUIInfo(map)) or ("#" .. map)
+end
+
+-- Steps of a goal grouped by dungeon, in the order they come up (easiest first).
+-- Each: { map, from, fromTimed, to, keys, gain }
+local function PlanByDungeon(data, g)
+  local rows, index = {}, {}
+  for k = 1, (g.keys or 0) do
+    local st = data.steps[k]
+    local r = index[st.map]
+    if not r then
+      local b = data.best[st.map]
+      r = { map = st.map, from = b and b.bestRunLevel or 0, fromTimed = b and b.finishedSuccess, to = st.level,
+            keys = 0, gain = 0 }
+      index[st.map] = r
+      rows[#rows + 1] = r
+    end
+    r.to, r.keys, r.gain = st.level, r.keys + 1, r.gain + st.gain
+  end
+  return rows
+end
+
 ---------------------------------------------------------------------------
--- Overview tab
+-- Overview tab: ranks plus a short goal summary (click a goal for the plan)
 ---------------------------------------------------------------------------
 local overview = ns.NewHistoryView("overview", L["Overview"], function() ns.RefreshOverview() end, 10)
 overview.header = overview:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 overview.header:SetPoint("TOPLEFT", 14, -6)
-overview.rows = {}
+overview.rows, overview.goalRows = {}, {}
 overview.goalsTitle = overview:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 overview.goalsTitle:SetText(L["Goals"])
 overview.note = overview:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 overview.note:SetPoint("BOTTOMLEFT", 12, 10)
-overview.note:SetWidth(590); overview.note:SetJustifyH("LEFT")
+overview.note:SetWidth(610); overview.note:SetJustifyH("LEFT")
 overview.empty = overview:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 overview.empty:SetPoint("TOP", 0, -60)
-local ovGoals = NewGoalList(overview, 580)
-ovGoals.onToggle = function() ns.RefreshOverview() end
+
+local function GoalRow(i)
+  if overview.goalRows[i] then return overview.goalRows[i] end
+  local r = CreateFrame("Button", nil, overview)
+  r:SetSize(610, 34)
+  r.hl = r:CreateTexture(nil, "BACKGROUND")
+  r.hl:SetAllPoints(); r.hl:SetColorTexture(1, 1, 1, 0.05); r.hl:Hide()
+  r.label = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  r.label:SetPoint("TOPLEFT", 4, -2)
+  r.note = r:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  r.note:SetPoint("BOTTOMLEFT", r.label, "BOTTOMRIGHT", 6, 1)
+  r.value = r:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  r.value:SetPoint("TOPRIGHT", -4, -2)
+  r.barBG = r:CreateTexture(nil, "ARTWORK")
+  r.barBG:SetColorTexture(0.17, 0.19, 0.23, 1)
+  r.barBG:SetPoint("TOPLEFT", 4, -22); r.barBG:SetSize(602, 6)
+  r.bar = r:CreateTexture(nil, "ARTWORK", nil, 1)
+  r.bar:SetPoint("TOPLEFT", r.barBG, "TOPLEFT")
+  r:SetScript("OnEnter", function(self) self.hl:Show() end)
+  r:SetScript("OnLeave", function(self) self.hl:Hide() end)
+  r:SetScript("OnClick", function(self) ns.OpenGoal(self.pct) end)
+  overview.goalRows[i] = r
+  return r
+end
 
 function ns.RefreshOverview()
   local score = ns.GetScore("player")
@@ -330,52 +275,179 @@ function ns.RefreshOverview()
 
   y = y - 10
   overview.goalsTitle:ClearAllPoints(); overview.goalsTitle:SetPoint("TOPLEFT", 14, y)
-  y = y - 24
-  ovGoals.scroll:ClearAllPoints()
-  ovGoals.scroll:SetPoint("TOPLEFT", 10, y)
-  ovGoals.scroll:SetPoint("BOTTOMRIGHT", -30, 28)
+  y = y - 26
   local data = ns.Goals("overall")
-  ovGoals:Render(data, false)
-  overview.note:SetText(SlopeNote(data))
+  local goals = data and data.goals or {}
+  for i, g in ipairs(goals) do
+    local r = GoalRow(i)
+    r.pct = g.pct
+    r.label:SetText(GoalLabel(g))
+    r.note:SetText(g.isNext and L["next step"] or (g.isTitle and L["season title"] or ""))
+    r.value:SetText(NeedText(g))
+    r.bar:SetSize(math.max(1, 602 * (g.progress or 0)), 6)
+    r.bar:SetColorTexture(ns.HexToRGB(ns.PctColor(g.pct)))
+    r:ClearAllPoints(); r:SetPoint("TOPLEFT", 10, y); r:Show()
+    y = y - 40
+  end
+  for i = #goals + 1, #overview.goalRows do overview.goalRows[i]:Hide() end
+  overview.note:SetText(#goals > 0 and L["Click a goal to see which keys to run."] or "")
 end
 
 ---------------------------------------------------------------------------
--- Goals tab: every goal with its keys, for overall or your spec
+-- Goals tab: a plan for one goal, one row per dungeon
 ---------------------------------------------------------------------------
 local goalsView = ns.NewHistoryView("goals", L["Goals"], function() ns.RefreshGoalsTab() end, 40)
-goalsView.which = goalsView:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-goalsView.which:SetPoint("TOPLEFT", 14, -6)
+local useSpec, selectedPct = false, nil
+goalsView.chips = {}
 goalsView.toggle = CreateFrame("Button", nil, goalsView, "UIPanelButtonTemplate")
 goalsView.toggle:SetSize(150, 22)
 goalsView.toggle:SetPoint("TOPRIGHT", -16, -4)
+goalsView.toggle:SetScript("OnClick", function() useSpec = not useSpec; ns.RefreshGoalsTab() end)
+goalsView.headline = goalsView:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+goalsView.headline:SetPoint("TOPLEFT", 14, -40)
+goalsView.keys = goalsView:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+goalsView.keys:SetPoint("TOPRIGHT", -16, -40)
+goalsView.barBG = goalsView:CreateTexture(nil, "ARTWORK")
+goalsView.barBG:SetColorTexture(0.17, 0.19, 0.23, 1)
+goalsView.barBG:SetPoint("TOPLEFT", 14, -68); goalsView.barBG:SetSize(626, 7)
+goalsView.bar = goalsView:CreateTexture(nil, "ARTWORK", nil, 1)
+goalsView.bar:SetPoint("TOPLEFT", goalsView.barBG, "TOPLEFT")
+goalsView.from = goalsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+goalsView.from:SetPoint("TOPLEFT", goalsView.barBG, "BOTTOMLEFT", 0, -3)
+goalsView.to = goalsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+goalsView.to:SetPoint("TOPRIGHT", goalsView.barBG, "BOTTOMRIGHT", 0, -3)
+goalsView.marks = {}
 goalsView.note = goalsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 goalsView.note:SetPoint("BOTTOMLEFT", 12, 10)
-goalsView.note:SetWidth(590); goalsView.note:SetJustifyH("LEFT")
-local gvGoals = NewGoalList(goalsView, 580)
-gvGoals.scroll:SetPoint("TOPLEFT", 10, -40)
-gvGoals.scroll:SetPoint("BOTTOMRIGHT", -30, 28)
-gvGoals.onToggle = function() ns.RefreshGoalsTab() end
-local useSpec = false
-goalsView.toggle:SetScript("OnClick", function()
-  useSpec = not useSpec
-  gvGoals.expanded = {}
-  ns.RefreshGoalsTab()
-end)
+goalsView.note:SetWidth(610); goalsView.note:SetJustifyH("LEFT")
+goalsView.empty = goalsView:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+goalsView.empty:SetPoint("TOP", 0, -130)
+
+local PCOLS = { { 14, 250, "LEFT" }, { 270, 80, "LEFT" }, { 355, 90, "LEFT" }, { 450, 70, "RIGHT" }, { 530, 100, "RIGHT" } }
+goalsView.head = {}
+for i, h in ipairs({ L["Dungeon"], L["Best now"], L["Run up to"], L["Keys"], L["Rating"] }) do
+  local fs = goalsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  fs:SetPoint("TOPLEFT", PCOLS[i][1], -100); fs:SetWidth(PCOLS[i][2]); fs:SetJustifyH(PCOLS[i][3])
+  fs:SetText(h)
+  goalsView.head[i] = fs
+end
+goalsView.rows = {}
+
+local function Chip(i)
+  if goalsView.chips[i] then return goalsView.chips[i] end
+  local b = CreateFrame("Button", nil, goalsView, "BackdropTemplate")
+  b:SetSize(96, 20)
+  b:SetPoint("TOPLEFT", 14 + (i - 1) * 102, -6)
+  b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+  b.text = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  b.text:SetPoint("CENTER")
+  b:SetScript("OnClick", function(self) selectedPct = self.pct; ns.RefreshGoalsTab() end)
+  goalsView.chips[i] = b
+  return b
+end
+
+local function PlanRow(i)
+  if goalsView.rows[i] then return goalsView.rows[i] end
+  local r = {}
+  for c = 1, #PCOLS do
+    local fs = goalsView:CreateFontString(nil, "OVERLAY", c == 1 and "GameFontHighlight" or "GameFontHighlightSmall")
+    fs:SetWidth(PCOLS[c][2]); fs:SetJustifyH(PCOLS[c][3]); fs:SetWordWrap(false)
+    r[c] = fs
+  end
+  goalsView.rows[i] = r
+  return r
+end
+
+function ns.OpenGoal(pct)
+  selectedPct = pct
+  ns.ToggleHistory("goals")
+  if KP_DB.historyTab ~= "goals" then ns.ShowHistoryTab("goals") end
+end
 
 function ns.RefreshGoalsTab()
   local id = ns.GetPlayerIdentity()
   local specKey = id.specID and ("spec:" .. id.specID)
   if not specKey then useSpec = false end
-  local key = useSpec and specKey or "overall"
-  local data = ns.Goals(key)
-  local name = useSpec and (id.specName .. " " .. (id.className or "")) or L["Overall"]
-  goalsView.which:SetText(string.format("%s  |c%s%s|r", name,
-    data and ns.PctColor(data.pct) or "ffcccccc",
-    data and string.format(L["Top %s"], ns.FormatPct(data.pct)) or ""))
+  local data = ns.Goals(useSpec and specKey or "overall")
   goalsView.toggle:SetText(useSpec and L["Show overall"] or (id.specName and string.format(L["Show %s"], id.specName) or L["Overall"]))
   goalsView.toggle:SetShown(specKey ~= nil)
-  gvGoals:Render(data, true)
-  goalsView.note:SetText(SlopeNote(data))
+
+  for _, c in pairs(goalsView.chips) do c:Hide() end
+  for _, r in pairs(goalsView.rows) do for c = 1, #PCOLS do r[c]:Hide() end end
+  for _, m in pairs(goalsView.marks) do m.tex:Hide(); m.label:Hide() end
+  if not data or #data.goals == 0 then
+    goalsView.headline:SetText(""); goalsView.keys:SetText(""); goalsView.note:SetText("")
+    goalsView.bar:Hide(); goalsView.barBG:Hide(); goalsView.from:SetText(""); goalsView.to:SetText("")
+    goalsView.empty:SetText(L["Your Mythic+ rating isn't available yet. Try again in a moment."]); goalsView.empty:Show()
+    return
+  end
+  goalsView.empty:Hide()
+
+  -- Goal chips; keep the chosen goal, else the first one not reached yet
+  local g
+  for _, x in ipairs(data.goals) do if x.pct == selectedPct then g = x end end
+  if not g then
+    for _, x in ipairs(data.goals) do if x.need > 0 then g = x break end end
+    g = g or data.goals[#data.goals]
+  end
+  selectedPct = g.pct
+  for i, x in ipairs(data.goals) do
+    local c = Chip(i)
+    c.pct = x.pct
+    c.text:SetText(ns.BracketText(x.pct))
+    local on = x.pct == g.pct
+    c:SetBackdropColor(on and 0.16 or 0.08, on and 0.10 or 0.08, on and 0.03 or 0.1, 1)
+    c:SetBackdropBorderColor(ns.HexToRGB(on and ns.PctColor(x.pct) or "ff4d4d52"))
+    c:Show()
+  end
+
+  local who = useSpec and (id.specName or "") or L["overall"]
+  if g.need == 0 then
+    goalsView.headline:SetText(string.format("|cff1eff00%s|r %s", L["Reached:"], GoalLabel(g) .. " " .. who))
+    goalsView.keys:SetText("")
+  else
+    goalsView.headline:SetText(string.format(L["+%s rating to %s %s"], ns.Num(g.need), GoalLabel(g), who))
+    goalsView.keys:SetText(g.keys and string.format(L["~%d keys"], g.keys) or string.format(L["%d+ keys"], MAX_STEPS))
+  end
+
+  -- Bar from your rating to the goal, with other goals marked on the way
+  goalsView.barBG:Show(); goalsView.bar:Show()
+  local lo, hi = data.score, math.max(g.cutoff, data.score + 1)
+  goalsView.bar:SetSize(g.need == 0 and 626 or 1, 7)
+  goalsView.bar:SetColorTexture(ns.HexToRGB(ns.PctColor(g.pct)))
+  goalsView.from:SetText(ns.Num(data.score)); goalsView.to:SetText(ns.Num(math.ceil(g.cutoff)))
+  local mi = 0
+  for _, x in ipairs(data.goals) do
+    if x ~= g and x.cutoff > lo and x.cutoff < hi then
+      mi = mi + 1
+      local m = goalsView.marks[mi]
+      if not m then
+        m = { tex = goalsView:CreateTexture(nil, "OVERLAY"), label = goalsView:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") }
+        m.tex:SetSize(1, 15)
+        goalsView.marks[mi] = m
+      end
+      local xpos = (x.cutoff - lo) / (hi - lo) * 626
+      m.tex:SetColorTexture(ns.HexToRGB(ns.PctColor(x.pct)))
+      m.tex:ClearAllPoints(); m.tex:SetPoint("TOP", goalsView.barBG, "TOPLEFT", xpos, 4); m.tex:Show()
+      m.label:SetText(GoalLabel(x)); m.label:ClearAllPoints(); m.label:SetPoint("TOP", goalsView.barBG, "BOTTOMLEFT", xpos, -3)
+      m.label:Show()
+    end
+  end
+
+  -- One row per dungeon
+  local plan = g.need > 0 and PlanByDungeon(data, g) or {}
+  for i, p in ipairs(plan) do
+    local r = PlanRow(i)
+    local y = -118 - (i - 1) * 20
+    for c = 1, #PCOLS do r[c]:ClearAllPoints(); r[c]:SetPoint("TOPLEFT", goalsView, "TOPLEFT", PCOLS[c][1], y); r[c]:Show() end
+    r[1]:SetText(MapName(p.map))
+    r[2]:SetText(p.from > 0 and string.format("%s+%d|r", p.fromTimed and "|cff999999" or "|cffff5555", p.from) or ("|cff777777" .. L["not run"] .. "|r"))
+    r[3]:SetText(string.format("|cffffd100+%d|r", p.to))
+    r[4]:SetText(tostring(p.keys))
+    r[5]:SetText(string.format("|cff1eff00+%d|r", p.gain))
+  end
+  for c = 1, #PCOLS do goalsView.head[c]:SetShown(#plan > 0) end
+  goalsView.note:SetText(#plan > 0 and (L["One row per dungeon: how high to time it. Any order works; lowest keys first is easiest."] .. " " .. SlopeNote(data)) or "")
 end
 
 ---------------------------------------------------------------------------
@@ -386,13 +458,17 @@ local dock
 local function BuildDock()
   if dock or not ChallengesFrame then return end
   dock = CreateFrame("Button", "KeystonePercentileDock", ChallengesFrame, "BackdropTemplate")
-  dock:SetWidth(240)
-  dock:SetPoint("TOPLEFT", PVEFrame or ChallengesFrame, "TOPRIGHT", 2, -2)
+  dock:SetWidth(215)
+  dock:SetFrameLevel((ChallengesFrame:GetFrameLevel() or 1) + 20)
   dock:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-  dock:SetBackdropColor(0, 0, 0, 0.85)
+  dock:SetBackdropColor(0, 0, 0, 0.72)
   dock:SetBackdropBorderColor(0, 0, 0, 1)
+  dock.icon = dock:CreateTexture(nil, "ARTWORK")
+  dock.icon:SetSize(16, 16)
+  dock.icon:SetPoint("TOPLEFT", 8, -7)
+  dock.icon:SetTexture("Interface\\AddOns\\Keystone_Percentile\\Media\\Icon")
   dock.title = dock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  dock.title:SetPoint("TOPLEFT", 10, -8)
+  dock.title:SetPoint("TOPLEFT", 28, -8)
   dock.title:SetText("Keystone Percentile")
   dock.rows, dock.goals = {}, {}
   dock.hint = dock:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -400,9 +476,22 @@ local function BuildDock()
   ChallengesFrame:HookScript("OnShow", function() ns.RefreshDock() end)
 end
 
+-- Inside the empty top-left corner of the Mythic+ window by default (the area
+-- to the right of the window is often used by other addons, e.g. Raider.IO);
+-- "outside" puts it to the right of the window instead.
+local function PlaceDock()
+  dock:ClearAllPoints()
+  if KP_DB.dockOutside then
+    dock:SetPoint("TOPLEFT", PVEFrame or ChallengesFrame, "TOPRIGHT", 2, -2)
+  else
+    dock:SetPoint("TOPLEFT", ChallengesFrame, "TOPLEFT", 8, -30)
+  end
+end
+
 function ns.RefreshDock()
   if not dock then return end
   if KP_DB.dock == false then dock:Hide() return end
+  PlaceDock()
   local score = ns.GetScore("player")
   if not score then dock:Hide() return end
   local rows = ns.BuildRows(score)

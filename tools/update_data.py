@@ -424,7 +424,7 @@ def main():
     elif not (cid and sec):
         print(f"Warcraft Logs: add your API key to {os.path.join(PERSONAL_DIR, 'wcl_key.json')} to import your runs.")
     else:
-        api, limited = None, False
+        api, limited, limit_kind = None, False, "points"
         try:
             api = wcl.WCL(cid, sec, point_budget=a.wcl_budget)
             if api.budget_left() < 20:
@@ -438,18 +438,32 @@ def main():
                                                      spec_labels, name, runs_cache)
             if zone and priority and not a.no_benchmarks and not limited:
                 levels = sorted({lv for _, _, lv in priority})
-                print(f"  Benchmarks for your {len(priority)} dungeon/spec/level combinations...")
+                # Number of ranked runs per key, from your own runs: saves page probing.
+                hints = {}
+                for runs in imported.values():
+                    for r in runs:
+                        k = (r.get("map"), r.get("specID"), r.get("level"))
+                        n = r.get("hn") if r.get("role") == "healer" else r.get("n")
+                        if all(k) and n:
+                            hints[k] = max(hints.get(k, 0), n)
+                print(f"  #1 and median for your {len(priority)} dungeon/spec/key combinations...")
                 dps = wcl.fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, dps,
-                                           priority, only_priority=True)
-        except wcl.RateLimited:
-            limited = True
+                                           priority, only_priority=True, n_hints=hints)
+        except wcl.RateLimited as e:
+            limited, limit_kind = True, e.kind
         except Exception as e:
             print(f"Warcraft Logs: stopped ({e}). Keeping what was fetched.")
+        if api and api.out_of_points:
+            limited, limit_kind = True, api.limit_kind or limit_kind
         if limited:
-            wait = api.reset_minutes() if api else None
-            print("Warcraft Logs: this API key has used up its points for the hour"
-                  + (f"; they refill in about {wait} minutes." if wait else ".")
-                  + " Everything fetched so far is saved; run this again later to continue.")
+            if limit_kind == "database":
+                print("Warcraft Logs: the limit for ranking lookups is used up for now (it refills within about"
+                      " an hour). Everything fetched so far is saved; run this again later to continue.")
+            else:
+                wait = api.reset_minutes() if api else None
+                print("Warcraft Logs: this API key has used up its points for the hour"
+                      + (f"; they refill in about {wait} minutes." if wait else ".")
+                      + " Everything fetched so far is saved; run this again later to continue.")
             if not imported:
                 keep = None if a.all_seasons else {str(zone["id"])} if zone else set()
                 for key, zones_cached in runs_cache.items():

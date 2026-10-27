@@ -113,7 +113,6 @@ if locale == "deDE" then
     ["Show next to the Mythic+ window"] = "Neben dem Mythisch+-Fenster anzeigen",
     ["Show overall"] = "Gesamt anzeigen",
     ["Stops the floating panel from being moved or resized."] = "Verhindert, dass das schwebende Fenster verschoben oder skaliert wird.",
-    ["Which keys"] = "Welche Schlüssel",
     ["Your Top % and goals beside Blizzard's Mythic+ window whenever you open it."] = "Dein Top % und deine Ziele neben Blizzards Mythisch+-Fenster, sobald du es öffnest.",
     ["end-of-key pop-up"] = "Fenster nach dem Schlüssel",
     ["floating panel"] = "schwebendes Fenster",
@@ -125,6 +124,17 @@ if locale == "deDE" then
     ["tooltips"] = "Tooltips",
     ["unlocked"] = "entsperrt",
     ["~%d keys"] = "~%d Schlüssel",
+    ["+%s rating to %s %s"] = "+%s Wertung bis %s %s",
+    ["Best now"] = "Bestes jetzt",
+    ["Click a goal to see which keys to run."] = "Ziel anklicken, um zu sehen, welche Schlüssel du laufen solltest.",
+    ["Keys"] = "Schlüssel",
+    ["One row per dungeon: how high to time it. Any order works; lowest keys first is easiest."] = "Eine Zeile pro Dungeon: wie hoch du ihn in der Zeit schaffen musst. Reihenfolge egal; niedrigste Schlüssel zuerst ist am leichtesten.",
+    ["Place it beside the window instead"] = "Stattdessen neben dem Fenster anzeigen",
+    ["Puts the panel to the right of the Mythic+ window instead of inside it. Other addons, like Raider.IO, often use that spot."] = "Zeigt das Fenster rechts neben dem Mythisch+-Fenster statt darin. Andere Addons wie Raider.IO nutzen diesen Platz oft.",
+    ["Reached:"] = "Erreicht:",
+    ["Run up to"] = "Bis Stufe",
+    ["not run"] = "nicht gelaufen",
+    ["median"] = "Median",
   }
 elseif locale == "frFR" then
   T = {
@@ -231,7 +241,6 @@ elseif locale == "frFR" then
     ["Show next to the Mythic+ window"] = "Afficher à côté de la fenêtre Mythique+",
     ["Show overall"] = "Afficher le global",
     ["Stops the floating panel from being moved or resized."] = "Empêche de déplacer ou redimensionner le cadre flottant.",
-    ["Which keys"] = "Quelles clés",
     ["Your Top % and goals beside Blizzard's Mythic+ window whenever you open it."] = "Votre top % et vos objectifs à côté de la fenêtre Mythique+ de Blizzard, dès que vous l'ouvrez.",
     ["end-of-key pop-up"] = "fenêtre de fin de clé",
     ["floating panel"] = "cadre flottant",
@@ -243,6 +252,17 @@ elseif locale == "frFR" then
     ["tooltips"] = "infobulles",
     ["unlocked"] = "déverrouillé",
     ["~%d keys"] = "~%d clés",
+    ["+%s rating to %s %s"] = "+%s de cote pour %s %s",
+    ["Best now"] = "Meilleur actuel",
+    ["Click a goal to see which keys to run."] = "Cliquez sur un objectif pour voir quelles clés faire.",
+    ["Keys"] = "Clés",
+    ["One row per dungeon: how high to time it. Any order works; lowest keys first is easiest."] = "Une ligne par donjon : jusqu'où le réussir à temps. L'ordre importe peu ; les clés les plus basses d'abord, c'est plus facile.",
+    ["Place it beside the window instead"] = "Le placer plutôt à côté de la fenêtre",
+    ["Puts the panel to the right of the Mythic+ window instead of inside it. Other addons, like Raider.IO, often use that spot."] = "Place le cadre à droite de la fenêtre Mythique+ au lieu de l'intérieur. D'autres addons, comme Raider.IO, utilisent souvent cet endroit.",
+    ["Reached:"] = "Atteint :",
+    ["Run up to"] = "Jusqu'à",
+    ["not run"] = "pas fait",
+    ["median"] = "médiane",
   }
 elseif locale == "ruRU" then
   T = {
@@ -349,7 +369,6 @@ elseif locale == "ruRU" then
     ["Show next to the Mythic+ window"] = "Показывать рядом с окном М+",
     ["Show overall"] = "Показать общий",
     ["Stops the floating panel from being moved or resized."] = "Запрещает перемещать или менять размер плавающей панели.",
-    ["Which keys"] = "Какие ключи",
     ["Your Top % and goals beside Blizzard's Mythic+ window whenever you open it."] = "Ваш топ % и цели рядом с окном М+ от Blizzard, когда вы его открываете.",
     ["end-of-key pop-up"] = "итоги после ключа",
     ["floating panel"] = "плавающая панель",
@@ -361,6 +380,17 @@ elseif locale == "ruRU" then
     ["tooltips"] = "подсказки",
     ["unlocked"] = "откреплена",
     ["~%d keys"] = "~%d ключей",
+    ["+%s rating to %s %s"] = "+%s рейтинга до %s %s",
+    ["Best now"] = "Лучший сейчас",
+    ["Click a goal to see which keys to run."] = "Нажмите на цель, чтобы увидеть, какие ключи проходить.",
+    ["Keys"] = "Ключи",
+    ["One row per dungeon: how high to time it. Any order works; lowest keys first is easiest."] = "Одна строка на подземелье: до какого уровня пройти его в срок. Порядок любой; проще начинать с самых низких ключей.",
+    ["Place it beside the window instead"] = "Показывать рядом с окном",
+    ["Puts the panel to the right of the Mythic+ window instead of inside it. Other addons, like Raider.IO, often use that spot."] = "Размещает панель справа от окна М+, а не внутри. Это место часто занимают другие аддоны, например Raider.IO.",
+    ["Reached:"] = "Достигнуто:",
+    ["Run up to"] = "До уровня",
+    ["not run"] = "не пройдено",
+    ["median"] = "медиана",
   }
 end
 

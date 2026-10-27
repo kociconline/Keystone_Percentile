@@ -25,7 +25,10 @@ CLASS_NAMES = ["Death Knight", "Demon Hunter", "Druid", "Evoker", "Hunter", "Mag
                "Paladin", "Priest", "Rogue", "Shaman", "Warlock", "Warrior"]
 
 # Percentile anchors stored per benchmark: top X% -> amount at that rank.
-ANCHORS = [1, 10, 25, 50, 75]
+BENCH_VERSION = 2  # bump to discard cached benchmarks made differently
+
+# #1 is stored as "top"; these are the other points kept per benchmark.
+ANCHORS = [1, 10, 50]
 
 # Healers are ranked on healing per second, everyone else on damage.
 HEALER_SPECS = {65, 105, 256, 257, 264, 270, 1468}
@@ -68,7 +71,12 @@ def load_credentials(folders=None):
 
 
 class RateLimited(RuntimeError):
-    """The Warcraft Logs key has no points left this hour."""
+    """The Warcraft Logs key hit a limit: its hourly API points, or the
+    separate budget for ranking lookups ("database points")."""
+
+    def __init__(self, msg, kind="points"):
+        super().__init__(msg)
+        self.kind = kind
 
 
 class WCL:
@@ -82,6 +90,7 @@ class WCL:
         self.point_budget = point_budget
         self.spent_start = None
         self.out_of_points = False
+        self.limit_kind = None
 
     def query(self, q, variables=None):
         body = json.dumps({"query": q, "variables": variables or {}}).encode()
@@ -95,15 +104,18 @@ class WCL:
                 break
             except urllib.error.HTTPError as e:
                 if e.code == 429:
-                    self.out_of_points = True
+                    self.out_of_points, self.limit_kind = True, "points"
                     raise RateLimited("Warcraft Logs rate limit reached")
                 if attempt == 2:
                     raise
                 time.sleep(3)
         if data.get("errors"):
             msg = data["errors"][0].get("message", "GraphQL error")
+            if "database points" in msg.lower():
+                self.out_of_points, self.limit_kind = True, "database"
+                raise RateLimited("Warcraft Logs ranking-lookup limit reached", "database")
             if "points" in msg.lower() or "rate limit" in msg.lower():
-                self.out_of_points = True
+                self.out_of_points, self.limit_kind = True, "points"
                 raise RateLimited("Warcraft Logs rate limit reached")
             raise RuntimeError(msg)
         return data["data"]
@@ -136,13 +148,17 @@ class WCL:
 def mythic_plus_zones(api):
     """All Warcraft Logs M+ zones, newest first, each with its dungeons."""
     d = api.query("""{ worldData { expansions { id name zones {
-        id name frozen encounters { id name } } } } }""")
+        id name frozen brackets { min type } encounters { id name } } } } }""")
     zones = []
     for exp in d["worldData"]["expansions"] or []:
         for z in exp.get("zones") or []:
             if "mythic+" in (z.get("name") or "").lower():
+                br = z.get("brackets") or {}
                 zones.append({"id": z["id"], "name": z["name"], "frozen": z.get("frozen"),
-                              "expansion": exp.get("name"), "encounters": z.get("encounters") or []})
+                              "expansion": exp.get("name"), "encounters": z.get("encounters") or [],
+                              # Warcraft Logs numbers key-level brackets from the zone's lowest
+                              # key: with keys starting at +2, +18 is bracket 17.
+                              "bracketMin": br.get("min") if isinstance(br.get("min"), int) else 2})
     zones.sort(key=lambda z: z["id"], reverse=True)
     return zones
 
@@ -200,8 +216,9 @@ def import_character_runs(api, char, zones, dungeon_map, cache=None):
         if not z["encounters"] or (z.get("frozen") and zid in cache):
             continue
         fields = "\n".join(
-            f'd{e["id"]}: encounterRankings(encounterID: {e["id"]}, metric: dps)\n'
-            f'h{e["id"]}: encounterRankings(encounterID: {e["id"]}, metric: hps)' for e in z["encounters"])
+            f'd{e["id"]}: encounterRankings(encounterID: {e["id"]}, metric: dps, byBracket: true)\n'
+            f'h{e["id"]}: encounterRankings(encounterID: {e["id"]}, metric: hps, byBracket: true)'
+            for e in z["encounters"])
         q = f"""query($n:String!,$s:String!,$r:String!) {{ characterData {{
             character(name:$n, serverSlug:$s, serverRegion:$r) {{ {fields} }} }} }}"""
         try:
@@ -242,11 +259,13 @@ def import_character_runs(api, char, zones, dungeon_map, cache=None):
                             "report": f'{rep.get("code")}#{rep.get("fightID")}' if rep.get("code") else None,
                             "src": "logs",
                         }
+                    # byBracket: rankPercent compares with runs at the same key level only.
                     pct = r.get("rankPercent") if isinstance(r.get("rankPercent"), (int, float)) else None
+                    total = r.get("rankTotalParses") if isinstance(r.get("rankTotalParses"), int) else None
                     if metric == "dps":
-                        run["dps"], run["pct"] = round(amount, 1), pct
+                        run["dps"], run["pct"], run["n"] = round(amount, 1), pct, total
                     else:
-                        run["hps"], run["hpct"] = round(amount, 1), pct
+                        run["hps"], run["hpct"], run["hn"] = round(amount, 1), pct, total
             zone_runs.extend(by_run.values())
         cache[zid] = zone_runs
         if zone_runs:
@@ -285,76 +304,66 @@ def _page(api, enc_id, cls, spec, level, pages, metric="dps"):
     return out
 
 
-def benchmark_one(api, enc_id, cls, spec, level, old=None, metric="dps"):
-    """Returns {"top":..,"n":..,"lp":..,"p1":..,...} or None.
-    Usually 2 requests when a previous result (old) gives the last page."""
-    guess = (old or {}).get("lp")
-    first_pages = [1] + ([guess, guess + 1] if guess and guess > 1 else [])
-    got0 = _page(api, enc_id, cls, spec, level, metric=metric, pages=first_pages)
-    rows, more = got0[1]
-    if not rows:
-        return None
-    log_debug("benchmark row", rows[0])
-    amounts = [row_amount(r) for r in rows if row_amount(r) is not None]
+def _find_count(api, enc_id, cls, spec, bracket, metric, per_page, first_rows, guess=None):
+    """Number of ranked runs, found by probing pages (2, 4, 8, ... then binary search)."""
+    lo, hi, probe, last_rows = 1, None, max(2, guess or 2), first_rows
+    while hi is None:
+        r, m = _page(api, enc_id, cls, spec, bracket, metric=metric, pages=[probe])[probe]
+        if not r:
+            hi = probe
+        elif not m:
+            return (probe - 1) * per_page + len(r)
+        else:
+            lo, last_rows, probe = probe, r, probe * 2
+            if probe > 4096:
+                hi = probe
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        r, m = _page(api, enc_id, cls, spec, bracket, metric=metric, pages=[mid])[mid]
+        if not r:
+            hi = mid
+        else:
+            lo, last_rows = mid, r
+            if not m:
+                break
+    return (lo - 1) * per_page + len(last_rows)
+
+
+def benchmark_one(api, enc_id, cls, spec, bracket, old=None, metric="dps", n_hint=None):
+    """#1, top 1%, top 10% and median for one dungeon / spec / key level.
+    Rankings come sorted best first, so each value is the row at that rank.
+    n_hint (number of ranked runs, e.g. from your own run's rankTotalParses) or a
+    previous result saves the page probing. Usually 2-3 ranking lookups."""
+    rows, more = _page(api, enc_id, cls, spec, bracket, metric=metric, pages=[1])[1]
+    amounts = [row_amount(r) for r in rows or [] if row_amount(r) is not None]
     if not amounts:
         return None
+    log_debug("benchmark row", rows[0])
     per_page = len(rows)
-
-    # Find the last page: reuse last time's answer if it still holds,
-    # otherwise probe 2, 4, 8, ... then binary search.
-    last_rows = rows
-    known_last = None
-    if more and guess and guess > 1:
-        g_rows, g_more = got0[guess]
-        n_rows, _ = got0[guess + 1]
-        if g_rows and not g_more and not n_rows:
-            known_last, last_rows = guess, g_rows
-    if more and known_last:
-        last_page = known_last
-    elif more:
-        lo, hi, probe = 1, None, max(2, guess or 2)
-        while hi is None:
-            r, m = _page(api, enc_id, cls, spec, level, metric=metric, pages=[probe])[probe]
-            if not r:
-                hi = probe
-            elif not m:
-                lo, hi, last_rows = probe, probe, r
-                break
-            else:
-                lo, probe = probe, probe * 2
-                if probe > 4096:
-                    hi = probe
-        while hi - lo > 1:
-            mid = (lo + hi) // 2
-            r, m = _page(api, enc_id, cls, spec, level, metric=metric, pages=[mid])[mid]
-            if not r:
-                hi = mid
-            else:
-                lo, last_rows = mid, r
-                if not m:
-                    break
-        last_page = lo
-    else:
-        last_page = 1
-    n = (last_page - 1) * per_page + len(last_rows)
-
-    res = {"top": round(amounts[0], 1), "n": n, "lp": last_page}
-    if last_page == 1:
-        for a in ANCHORS:
-            idx = min(len(amounts) - 1, max(0, math.ceil(a / 100 * n) - 1))
-            res[f"p{a}"] = round(amounts[idx], 1)
-        return res
-
-    wanted = {}
-    for a in ANCHORS:
-        rank = max(1, math.ceil(a / 100 * n))
-        wanted[a] = ((rank - 1) // per_page + 1, (rank - 1) % per_page)
-    pages = sorted({p for p, _ in wanted.values()})
     got = {1: (rows, more)}
-    pages = [p for p in pages if p not in got]
+    if not more:
+        n = len(amounts)
+    else:
+        # Check a guessed count (your run's count, or last time's) by reading its
+        # last page: it must have rows and be the final page. Otherwise count.
+        guess = n_hint or (old or {}).get("n")
+        n = None
+        if guess and guess > per_page:
+            lp = math.ceil(guess / per_page)
+            got.update(_page(api, enc_id, cls, spec, bracket, metric=metric, pages=[lp]))
+            last_rows, last_more = got[lp]
+            if last_rows and not last_more:
+                n = (lp - 1) * per_page + len(last_rows)
+        if not n:
+            n = _find_count(api, enc_id, cls, spec, bracket, metric, per_page, rows, (old or {}).get("lp"))
+    res = {"top": round(amounts[0], 1), "n": n, "lp": max(1, math.ceil(n / per_page))}
+
+    wanted = {a: max(1, math.ceil(a / 100 * n)) for a in ANCHORS}
+    pages = sorted({(rank - 1) // per_page + 1 for rank in wanted.values()} - set(got))
     for i in range(0, len(pages), 5):
-        got.update(_page(api, enc_id, cls, spec, level, metric=metric, pages=pages[i:i + 5]))
-    for a, (p, idx) in wanted.items():
+        got.update(_page(api, enc_id, cls, spec, bracket, metric=metric, pages=pages[i:i + 5]))
+    for a, rank in wanted.items():
+        p, idx = (rank - 1) // per_page + 1, (rank - 1) % per_page
         rows_p = (got.get(p) or ([], False))[0]
         if rows_p:
             v = row_amount(rows_p[min(idx, len(rows_p) - 1)])
@@ -364,7 +373,7 @@ def benchmark_one(api, enc_id, cls, spec, level, old=None, metric="dps"):
 
 
 def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, priority=None,
-                     reserve=200, max_age_days=3, only_priority=False):
+                     reserve=200, max_age_days=3, only_priority=False, n_hints=None):
     """
     Refresh as many (dungeon, spec, level) benchmarks as the point budget allows.
     existing:  previous KP_DATA.dps table, kept for anything not refreshed.
@@ -384,6 +393,8 @@ def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, prio
                 continue
             for lv in levels:
                 old = ((out.get(map_id) or {}).get(spec_id) or {}).get(lv)
+                if old and old.get("v") != BENCH_VERSION:
+                    old = None  # made with the old (wrong) key-level numbering
                 age = now - (old or {}).get("u", 0)
                 if old and age < max_age_days * 86400:
                     continue
@@ -391,6 +402,11 @@ def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, prio
                 if only_priority and pri:
                     continue
                 jobs.append((pri, (old or {}).get("u", 0), map_id, spec_id, lv, e["id"], cls, spec))
+    for map_id in list(out):
+        for spec_id in list(out[map_id]):
+            for lv in list(out[map_id][spec_id]):
+                if out[map_id][spec_id][lv].get("v") != BENCH_VERSION:
+                    del out[map_id][spec_id][lv]
     jobs.sort()
     done = 0
     for _, _, map_id, spec_id, lv, enc_id, cls, spec in jobs:
@@ -400,13 +416,15 @@ def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, prio
         try:
             old = ((out.get(map_id) or {}).get(spec_id) or {}).get(lv)
             metric = metric_for_spec(spec_id)
-            b = benchmark_one(api, enc_id, cls, spec, lv, old, metric=metric)
+            bracket = lv - (zone.get("bracketMin") or 2) + 1
+            hint = (n_hints or {}).get((map_id, spec_id, lv))
+            b = benchmark_one(api, enc_id, cls, spec, bracket, old, metric=metric, n_hint=hint)
         except RuntimeError as e:
             print(f"    Stopped: {e}")
             break
         done += 1
         if b:
-            b["u"], b["m"] = now, metric
+            b["u"], b["m"], b["v"] = now, metric, BENCH_VERSION
             out.setdefault(map_id, {}).setdefault(spec_id, {})[lv] = b
     else:
         if jobs:

@@ -5,8 +5,8 @@ local L = ns.L
 
 local W, ROW_H, VISIBLE = 660, 22, 14
 local COLS = { -- x offset, width, justify
-  date = { 10, 52, "LEFT" }, dungeon = { 66, 190, "LEFT" }, result = { 260, 54, "LEFT" },
-  dps = { 316, 66, "RIGHT" }, rank = { 392, 84, "LEFT" }, bar = { 480, 96 },
+  date = { 10, 50, "LEFT" }, dungeon = { 62, 172, "LEFT" }, result = { 236, 40, "LEFT" },
+  dps = { 278, 62, "RIGHT" }, median = { 344, 62, "RIGHT" }, rank = { 414, 96, "LEFT" }, bar = { 514, 100 },
 }
 
 local state = { dungeon = nil, spec = nil, season = nil, sort = "date" }
@@ -118,7 +118,7 @@ win.summary:SetPoint("TOPRIGHT", -14, -8)
 
 -- Column headers
 local headers = { { "date", L["Date"] }, { "dungeon", L["Dungeon"] }, { "result", L["Result"] },
-  { "dps", L["DPS / HPS"] }, { "rank", L["Rank"] }, { "bar", L["vs #1"] } }
+  { "dps", L["DPS / HPS"] }, { "median", L["Median"] }, { "rank", L["Rank"] }, { "bar", L["vs #1"] } }
 for _, h in ipairs(headers) do
   local c = COLS[h[1]]
   local fs = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -282,6 +282,13 @@ function Refresh()
     row.dungeon:SetText(string.format("%s +%s", ns.DungeonName(r), r.level or "?"))
     row.result:SetText(ResultText(r))
     row.dps:SetText(ns.FormatDPS(r._ev.amount) .. (r._ev.metric == "hps" and " |cff888888H|r" or ""))
+    -- Median for the same dungeon, spec and key level: green when you beat it
+    local med = r._ev.bench and r._ev.bench.p50
+    if med and r._ev.amount then
+      row.median:SetText(string.format("|cff%s%s|r", r._ev.amount >= med and "1eff00" or "ff8080", ns.FormatDPS(med)))
+    else
+      row.median:SetText("|cff777777—|r")
+    end
     local star = (best[ns.DungeonName(r)] == r) and " |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12|t" or ""
     row.rank:SetText(ns.TopText(r._ev) .. star)
     if r._ev.ofTop then
