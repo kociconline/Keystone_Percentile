@@ -4,7 +4,8 @@
 local ADDON, ns = ...
 local L = ns.L
 
-local ANCHORS = { 1, 10, 50 } -- benchmark keys p1, p10, p50 (median); #1 is "top"
+-- Benchmark keys p0.1 ... p50 (DPS at that Top %, same class and spec); #1 is "top".
+local ANCHORS = { 0.1, 0.5, 1, 2, 5, 10, 25, 50 }
 
 ---------------------------------------------------------------------------
 -- Formatting
@@ -158,7 +159,7 @@ local function CompletionInfo()
   if C_ChallengeMode.GetChallengeCompletionInfo then
     local ok, i = pcall(C_ChallengeMode.GetChallengeCompletionInfo)
     if ok and i and i.mapChallengeModeID then
-      return i.mapChallengeModeID, i.level, i.time, i.onTime, i.keystoneUpgradeLevels
+      return i.mapChallengeModeID, i.level, i.time, i.onTime, i.keystoneUpgradeLevels, i.newOverallDungeonScore
     end
   end
   if C_ChallengeMode.GetCompletionInfo then
@@ -176,11 +177,12 @@ local function BenchTable(source, map, specID)
 end
 
 function ns.Benchmark(map, specID, level)
-  -- Exact level first, then the nearest level within 3; at each distance your
-  -- personal benchmarks (fetched for your own dungeons) win over the shared ones.
+  -- Same key level first; one level up or down only when that's all there is
+  -- (shown as "nearest key level"). Your personal benchmarks (fetched for your
+  -- own keys) win over the shared ones.
   if not level then return nil end
   local mine, shared = BenchTable(KP_PERSONAL, map, specID), BenchTable(KP_DATA, map, specID)
-  for d = 0, 3 do
+  for d = 0, 1 do
     for _, lv in ipairs(d == 0 and { level } or { level - d, level + d }) do
       if mine and mine[lv] then return mine[lv], lv end
       if shared and shared[lv] then return shared[lv], lv end
@@ -280,6 +282,9 @@ function ns.AllRuns(key)
         and math.abs((imp.t or 0) - (live.t or 0)) < 3 * 3600 then
         used[i] = true
         r.pct, r.hpct, r.report, r.src = imp.pct, imp.hpct, imp.report, "both"
+        r.n, r.hn, r.score = imp.n, imp.hn, imp.score
+        if r.dps == nil then r.dps = imp.dps end
+        if r.hps == nil then r.hps = imp.hps end
         break
       end
     end
@@ -311,8 +316,9 @@ end
 function ns.ShareText(run)
   local ev = ns.EvaluateRun(run)
   local spec = (run.spec or "") .. (run.className and (" " .. run.className) or "")
-  local result = run.timed == true and string.format(L["Timed +%d"], run.upgrades or 1)
-    or run.timed == false and L["Over time"] or nil
+  local timed, up = ns.RunResult(run)
+  local result = timed == true and string.format(L["Timed +%d"], up or 1)
+    or timed == false and L["Over time"] or nil
   local parts = { string.format("%s +%s%s", ns.DungeonName(run), run.level or "?", result and (" (" .. result .. ")") or "") }
   if spec ~= "" then parts[#parts + 1] = spec end
   if ev.amount then parts[#parts + 1] = FormatAmount(ev.amount) .. " " .. (ev.metric == "hps" and "HPS" or "DPS") end
@@ -345,79 +351,156 @@ function ns.ShareRun(run, toGuild)
 end
 
 ---------------------------------------------------------------------------
--- End-of-key pop-up
+-- Run result (timed / over time). Imported runs without a medal get it from
+-- their time against the dungeon's timer.
 ---------------------------------------------------------------------------
-local BAR_W, PAD = 340, 14
-local popup = CreateFrame("Frame", "KeystonePercentileRunPopup", UIParent, "BackdropTemplate")
-popup:SetSize(BAR_W + 2 * PAD + 6, 300)
-popup:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
-popup:SetFrameStrata("DIALOG")
-popup:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-popup:SetBackdropColor(0, 0, 0, 0.85)
-popup:SetBackdropBorderColor(0, 0, 0, 1)
-popup:SetMovable(true); popup:EnableMouse(true); popup:RegisterForDrag("LeftButton")
-popup:SetClampedToScreen(true)
-popup:SetScript("OnDragStart", popup.StartMoving)
-popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
-popup:Hide()
-tinsert(UISpecialFrames, "KeystonePercentileRunPopup")
-
-local close = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
-close:SetPoint("TOPRIGHT", 2, 2)
-
-local function FS(font, justify)
-  local f = popup:CreateFontString(nil, "OVERLAY", font)
-  f:SetJustifyH(justify or "LEFT")
-  return f
+function ns.RunResult(run)
+  if run.timed ~= nil then return run.timed, run.upgrades end
+  if run.dur and run.map and C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
+    local _, _, limit = C_ChallengeMode.GetMapUIInfo(run.map)
+    if limit and limit > 0 then
+      if run.dur > limit then return false, 0 end
+      return true, (run.dur <= limit * 0.6 and 3) or (run.dur <= limit * 0.8 and 2) or 1
+    end
+  end
 end
 
-popup.title = FS("GameFontNormalLarge")
-popup.result = FS("GameFontHighlightSmall", "RIGHT")
-popup.spec = FS("GameFontHighlight")
-popup.amount = FS("GameFontHighlightHuge")
-popup.amountLabel = FS("GameFontDisableSmall")
-popup.top = FS("GameFontNormalLarge", "RIGHT")
-popup.sub = FS("GameFontDisableSmall")
-popup.why = FS("GameFontHighlightSmall")
-popup.groupTitle = FS("GameFontNormal")
-popup.footer = FS("GameFontDisableSmall")
-popup.goal = FS("GameFontHighlight")
-
-popup.barBG = popup:CreateTexture(nil, "ARTWORK")
-popup.barBG:SetColorTexture(0.17, 0.19, 0.23, 1)
-popup.barBG:SetSize(BAR_W, 8)
-popup.bar = popup:CreateTexture(nil, "ARTWORK", nil, 1)
-popup.bar:SetHeight(8)
-popup.you = FS("GameFontHighlightSmall", "CENTER")
-popup.you:SetText(L["you"])
-popup.markers = {}
-for i = 1, 6 do
-  popup.markers[i] = { tex = popup:CreateTexture(nil, "OVERLAY"), label = FS("GameFontDisableSmall", "CENTER") }
-  popup.markers[i].tex:SetSize(1, 16)
+function ns.ResultText(run)
+  local timed, up = ns.RunResult(run)
+  if timed == true then return "|cff1eff00" .. string.format(L["Timed +%d"], up or 1) .. "|r" end
+  if timed == false then return "|cffff5555" .. L["Over time"] .. "|r" end
+  return "|cff777777" .. L["Result unknown"] .. "|r"
 end
 
-popup.goals = {}
-for i = 1, 4 do popup.goals[i] = { FS("GameFontNormal"), FS("GameFontDisable"), FS("GameFontNormal", "RIGHT") } end
-popup.members = {}
-for i = 1, 5 do popup.members[i] = { FS("GameFontHighlightSmall"), FS("GameFontDisableSmall", "RIGHT"), FS("GameFontHighlightSmall", "RIGHT") } end
+---------------------------------------------------------------------------
+-- Comparisons with the same class and spec, dungeon and key level
+---------------------------------------------------------------------------
+local NEXT_STEPS = { 25, 10, 5, 2, 0.5 } -- shown as "next step" between median, 1% and 0.1%
 
-local share = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-share:SetSize(70, 20)
-share:SetText(L["Share"])
-share:SetPoint("BOTTOMRIGHT", -10, 8)
-share:RegisterForClicks("LeftButtonUp")
-share:SetScript("OnClick", function() if popup.run then ns.ShareRun(popup.run, IsShiftKeyDown()) end end)
-share:SetScript("OnEnter", function(self)
-  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-  GameTooltip:AddLine(L["Share"])
-  GameTooltip:AddLine(L["Click: group chat. Shift-click: guild chat."], 1, 1, 1, true)
-  GameTooltip:Show()
-end)
-share:SetScript("OnLeave", GameTooltip_Hide)
+-- "Elemental Shaman"
+function ns.SpecLabel(run)
+  local spec = run.spec
+  local cls = run.className
+  if (not spec or not cls) and run.specID then
+    local info = ns.SpecInfo(run.specID)
+    spec, cls = spec or (info and info.name), cls or (info and info.className)
+  end
+  return ((spec or "") .. (cls and (" " .. cls) or "")):gsub("^%s+", "")
+end
 
-local function Place(fs, x, y, point)
+-- "+22%" (green) or "−9%" (red): your amount against a benchmark value.
+function ns.DiffText(amount, v)
+  if not amount or not v or v <= 0 then return "|cff777777—|r" end
+  local d = (amount - v) / v * 100
+  local txt = math.abs(d) < 1 and string.format("%.1f%%", math.abs(d)) or string.format("%d%%", math.floor(math.abs(d) + 0.5))
+  if d >= 0 then return "|cff1eff00+" .. txt .. "|r" end
+  return "|cffff6060−" .. txt .. "|r"
+end
+
+-- The next bracket above your rank that sits between the median and Top 1%.
+local function NextStep(ev)
+  local b = ev.bench
+  if not (b and ev.top) then return nil end
+  for _, a in ipairs(NEXT_STEPS) do
+    if a < ev.top and b["p" .. a] and not (a < 1 and ev.top > 1) then return a end
+  end
+end
+
+function ns.CompareRows(run, ev)
+  ev = ev or ns.EvaluateRun(run)
+  local b, out = ev.bench, {}
+  if not b then return out end
+  local who = ns.SpecLabel(run)
+  local function Add(kind, label, v, note)
+    if v and v > 0 then out[#out + 1] = { kind = kind, label = label, v = v, note = note } end
+  end
+  Add("median", string.format(L["Median %s"], who), b.p50)
+  local nxt = NextStep(ev)
+  if nxt and nxt ~= 1 then Add("next", string.format(L["Top %s"], nxt .. "%"), b["p" .. nxt], L["your next step"]) end
+  Add("p1", string.format(L["Top %s"], "1%"), b.p1)
+  Add("p01", string.format(L["Top %s"], "0.1%"), b["p0.1"])
+  Add("top", string.format(L["#1 %s"], who), b.top)
+  return out
+end
+
+-- "#14 of 1,672"
+local function Position(ev, run)
+  local n = ev.exact and ((ev.metric == "hps") and run.hn or run.n) or (ev.bench and ev.bench.n)
+  if not (n and ev.top) then return nil end
+  return math.max(1, math.floor(ev.top / 100 * n + 0.5)), n
+end
+
+---------------------------------------------------------------------------
+-- Run detail: used by the end-of-key pop-up and the page inside the window
+---------------------------------------------------------------------------
+local Detail = {}
+Detail.__index = Detail
+
+function ns.NewRunDetail(parent, width, opts)
+  opts = opts or {}
+  local d = setmetatable({ f = parent, w = width, pad = 14, opts = opts }, Detail)
+  local function FS(font, justify)
+    local f = parent:CreateFontString(nil, "OVERLAY", font)
+    f:SetJustifyH(justify or "LEFT")
+    f:SetWordWrap(false)
+    return f
+  end
+  d.FS = FS
+  d.title = FS("GameFontNormalLarge")
+  d.result = FS("GameFontHighlight")
+  d.meta = FS("GameFontDisableSmall", "RIGHT")
+  d.spec = FS("GameFontHighlightSmall")
+  d.boxes = {}
+  for i = 1, 3 do
+    local bx = { bg = parent:CreateTexture(nil, "ARTWORK"),
+      label = FS("GameFontDisableSmall"), value = FS("GameFontHighlightLarge"), sub = FS("GameFontDisableSmall") }
+    bx.bg:SetColorTexture(1, 1, 1, 0.06)
+    d.boxes[i] = bx
+  end
+  d.cmpTitle = FS("GameFontNormal")
+  d.barBG = parent:CreateTexture(nil, "ARTWORK")
+  d.barBG:SetColorTexture(0.17, 0.19, 0.23, 1)
+  d.bar = parent:CreateTexture(nil, "ARTWORK", nil, 1)
+  d.you = FS("GameFontHighlightSmall", "CENTER")
+  d.you:SetText(L["you"])
+  d.markers = {}
+  for i = 1, 6 do
+    d.markers[i] = { tex = parent:CreateTexture(nil, "OVERLAY"), label = FS("GameFontDisableSmall", "CENTER") }
+    d.markers[i].tex:SetSize(2, 16)
+  end
+  d.cmp = {}
+  for i = 1, 6 do
+    d.cmp[i] = { stripe = parent:CreateTexture(nil, "ARTWORK"), label = FS("GameFontHighlight"),
+      value = FS("GameFontHighlight", "RIGHT"), diff = FS("GameFontHighlight", "RIGHT"), note = FS("GameFontDisableSmall", "RIGHT") }
+    d.cmp[i].stripe:SetColorTexture(1, 1, 1, 0.04)
+  end
+  d.noData = FS("GameFontDisable")
+  d.why = FS("GameFontHighlightSmall")
+  d.why:SetWordWrap(true)
+  d.groupTitle = FS("GameFontNormal")
+  d.members = {}
+  for i = 1, 5 do d.members[i] = { FS("GameFontHighlightSmall"), FS("GameFontDisableSmall", "RIGHT"), FS("GameFontHighlightSmall", "RIGHT") } end
+  d.goal = FS("GameFontHighlight")
+  d.footer = FS("GameFontDisableSmall")
+
+  local share = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+  share:SetSize(70, 20)
+  share:SetText(L["Share"])
+  share:SetScript("OnClick", function() if d.run then ns.ShareRun(d.run, IsShiftKeyDown()) end end)
+  share:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(L["Share"])
+    GameTooltip:AddLine(L["Click: group chat. Shift-click: guild chat."], 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  share:SetScript("OnLeave", GameTooltip_Hide)
+  d.share = share
+  return d
+end
+
+function Detail:Place(fs, x, y, point)
   fs:ClearAllPoints()
-  fs:SetPoint(point or "TOPLEFT", popup, point or "TOPLEFT", x, y)
+  fs:SetPoint(point or "TOPLEFT", self.f, point or "TOPLEFT", x, y)
   fs:Show()
 end
 
@@ -446,161 +529,178 @@ local function WhyText(run)
   return s
 end
 
-function ns.ShowRunPopup(run)
-  popup.run = run
+-- Draws a run; returns the height used.
+function Detail:Render(run)
+  self.run = run
+  local P, W = self.pad, self.w
   local ev = ns.EvaluateRun(run)
-  local y = -12
-
-  popup.title:SetText(string.format("%s +%s", ns.DungeonName(run), run.level or "?"))
-  Place(popup.title, PAD, y)
-  if run.timed == true then
-    popup.result:SetText(string.format("|cff1eff00%s|r |cff999999· %s|r", string.format(L["Timed +%d"], run.upgrades or 1), FormatTime(run.dur)))
-  elseif run.timed == false then
-    popup.result:SetText(string.format("|cffff5555%s|r |cff999999· %s|r", L["Over time"], FormatTime(run.dur)))
-  else
-    popup.result:SetText(run.dur and ("|cff999999" .. FormatTime(run.dur) .. "|r") or "")
-  end
-  Place(popup.result, -30, y - 3, "TOPRIGHT")
-  y = y - 20
-
-  local spec = (run.spec or "") .. (run.className and (" " .. run.className) or "")
-  if run.hero then spec = spec .. " · " .. run.hero end
-  popup.spec:SetText(string.format("|c%s%s|r", ClassColor(run.classFile), spec))
-  Place(popup.spec, PAD, y)
-  y = y - 24
-
-  popup.amount:SetText(FormatAmount(ev.amount))
-  Place(popup.amount, PAD, y)
-  popup.amountLabel:SetText(AmountLabel(ev.metric, ev.role) .. (run.approx and (" (" .. L["approx."] .. ")") or ""))
-  popup.amountLabel:ClearAllPoints()
-  popup.amountLabel:SetPoint("BOTTOMLEFT", popup.amount, "BOTTOMRIGHT", 6, 3)
-  popup.amountLabel:Show()
-  popup.top:SetText(ns.TopText(ev))
-  Place(popup.top, -PAD, y - 2, "TOPRIGHT")
-  y = y - 26
-
   local b = ev.bench
-  if ev.amount == nil then
-    popup.sub:SetText("|cffff5555" .. L["Couldn't read your damage for this run."] .. "|r")
-  elseif ev.exact then
-    local n = ev.metric == "hps" and run.hn or run.n
-    if n and run.level then
-      popup.sub:SetText(string.format(L["of %s logged %s runs at +%d"], ns.Num(n),
-        (spec:match("^[^·]+") or ""):gsub("%s+$", ""), run.level))
-    else
-      popup.sub:SetText(L["Official Warcraft Logs rank for this run"])
-    end
-  elseif b then
-    popup.sub:SetText(string.format(L["of %s logged %s runs at +%d"], ns.Num(b.n or 0), (spec:match("^[^·]+") or ""):gsub("%s+$", ""), ev.benchLevel))
-  else
-    popup.sub:SetText(L["No Warcraft Logs benchmark for this spec and key level yet."])
-  end
-  Place(popup.sub, PAD, y)
-  y = y - 18
+  local who = ns.SpecLabel(run)
+  local y = -(self.opts.top or 12)
+  local x0 = self.opts.titleX or P
 
-  -- Bar: 0 .. #1, with markers at each percentile
-  for _, m in ipairs(popup.markers) do m.tex:Hide(); m.label:Hide() end
-  if b and b.top and b.top > 0 and ev.amount then
-    y = y - 14
-    popup.barBG:ClearAllPoints(); popup.barBG:SetPoint("TOPLEFT", popup, "TOPLEFT", PAD + 3, y); popup.barBG:Show()
-    local frac = math.min(ev.amount / b.top, 1)
-    popup.bar:ClearAllPoints(); popup.bar:SetPoint("TOPLEFT", popup.barBG, "TOPLEFT")
-    popup.bar:SetWidth(math.max(1, frac * BAR_W))
-    popup.bar:SetColorTexture(HexToRGB(ns.PctColor(ev.top or 100))); popup.bar:Show()
-    popup.you:ClearAllPoints(); popup.you:SetPoint("BOTTOM", popup.barBG, "TOPLEFT", frac * BAR_W, 3); popup.you:Show()
-    local lastX = -100
-    for i, a in ipairs({ 50, 10, 1 }) do
-      local v = b["p" .. a]
-      if v then
-        local x = math.min(v / b.top, 1) * BAR_W
-        local mk = popup.markers[i]
-        mk.tex:SetColorTexture(HexToRGB(ns.PctColor(a)))
-        mk.tex:ClearAllPoints(); mk.tex:SetPoint("TOP", popup.barBG, "TOPLEFT", x, 4); mk.tex:Show()
-        if x - lastX > 24 then
-          mk.label:SetText(a == 50 and L["median"] or (a .. "%")); mk.label:ClearAllPoints()
-          mk.label:SetPoint("TOP", popup.barBG, "BOTTOMLEFT", x, -4); mk.label:Show()
-          lastX = x
+  -- Header: dungeon and key, result, date
+  self.title:SetText(string.format("%s +%s", ns.DungeonName(run), run.level or "?"))
+  self:Place(self.title, x0, y)
+  self.result:SetText(ns.ResultText(run))
+  self.result:ClearAllPoints(); self.result:SetPoint("LEFT", self.title, "RIGHT", 10, 0); self.result:Show()
+  local meta = date("%b %d", run.t or 0)
+  if run.dur then meta = meta .. " · " .. FormatTime(run.dur) end
+  self.meta:SetText(meta)
+  self:Place(self.meta, -(self.opts.metaRight or P), y - 4, "TOPRIGHT")
+  y = y - 20
+  local spec = who
+  if run.hero then spec = spec .. " · " .. run.hero end
+  self.spec:SetText(string.format("|c%s%s|r", ClassColor(run.classFile), spec))
+  self:Place(self.spec, x0, y)
+  y = y - 22
+
+  -- Three boxes: your DPS, your rank, #1 of your spec
+  local gap = 8
+  local bw = (W - 2 * P - 2 * gap) / 3
+  local pos, n = Position(ev, run)
+  local metricName = ev.metric == "hps" and "HPS" or "DPS"
+  local boxes = {
+    { AmountLabel(ev.metric, ev.role) .. (run.approx and (" (" .. L["approx."] .. ")") or ""),
+      ev.amount and FormatAmount(ev.amount) or "|cff777777—|r",
+      ev.amount and "" or L["Couldn't read your damage for this run."] },
+    { L["Your rank"], ns.TopText(ev),
+      pos and string.format(L["#%s of %s at +%d"], ns.Num(pos), ns.Num(n), (not ev.exact and ev.benchLevel) or run.level or 0)
+        or (ev.top and "" or L["No data for this key yet"]) },
+    { string.format(L["#1 %s"], who), b and b.top and FormatAmount(b.top) or "|cff777777—|r",
+      (ev.ofTop and string.format(L["you're at %d%% of it"], math.floor(ev.ofTop * 100 + 0.5))) or "" },
+  }
+  for i, bx in ipairs(self.boxes) do
+    local x = P + (i - 1) * (bw + gap)
+    bx.bg:ClearAllPoints(); bx.bg:SetPoint("TOPLEFT", self.f, "TOPLEFT", x, y); bx.bg:SetSize(bw, 56); bx.bg:Show()
+    bx.label:SetText(boxes[i][1]); bx.label:SetWidth(bw - 16); self:Place(bx.label, x + 8, y - 7)
+    bx.value:SetText(boxes[i][2]); self:Place(bx.value, x + 8, y - 21)
+    bx.sub:SetText(boxes[i][3]); bx.sub:SetWidth(bw - 16); self:Place(bx.sub, x + 8, y - 41)
+  end
+  y = y - 66
+
+  -- Comparison with the same class and spec at this dungeon and key level
+  local rowsData = ns.CompareRows(run, ev)
+  for _, m in ipairs(self.markers) do m.tex:Hide(); m.label:Hide() end
+  if b and #rowsData > 0 then
+    local lvlNote = (ev.benchLevel and ev.benchLevel ~= run.level)
+      and ("  |cff888888" .. string.format(L["(using +%d, the nearest key with data)"], ev.benchLevel) .. "|r") or ""
+    self.cmpTitle:SetText(string.format(L["Compared with %s players · %s +%d"], who, ns.DungeonName(run), run.level or 0)
+      .. string.format(" |cff888888· %s %s|r", ns.Num(b.n or 0), L["logged runs"]) .. lvlNote)
+    self.cmpTitle:SetWidth(W - 2 * P)
+    self:Place(self.cmpTitle, P, y)
+    y = y - 30
+    self.noData:Hide()
+
+    -- Bar from 0 to #1 with markers
+    local BW = W - 2 * P - 6
+    if ev.amount and b.top and b.top > 0 then
+      self.barBG:ClearAllPoints(); self.barBG:SetPoint("TOPLEFT", self.f, "TOPLEFT", P + 3, y); self.barBG:SetSize(BW, 8); self.barBG:Show()
+      local frac = math.min(ev.amount / b.top, 1)
+      self.bar:ClearAllPoints(); self.bar:SetPoint("TOPLEFT", self.barBG, "TOPLEFT")
+      self.bar:SetSize(math.max(1, frac * BW), 8)
+      self.bar:SetColorTexture(HexToRGB(ns.PctColor(ev.top or 100))); self.bar:Show()
+      self.you:ClearAllPoints(); self.you:SetPoint("BOTTOM", self.barBG, "TOPLEFT", frac * BW, 3); self.you:Show()
+      local lastX, mi = -100, 0
+      for _, r in ipairs(rowsData) do
+        if r.kind ~= "top" then
+          mi = mi + 1
+          local mk = self.markers[mi]
+          local xm = math.min(r.v / b.top, 1) * BW
+          mk.tex:SetColorTexture(0.9, 0.88, 0.8, 0.9)
+          mk.tex:ClearAllPoints(); mk.tex:SetPoint("TOP", self.barBG, "TOPLEFT", xm, 4); mk.tex:Show()
+          if xm - lastX > 40 then
+            local short = r.kind == "median" and L["median"] or (r.kind == "p1" and "1%") or (r.kind == "p01" and "0.1%")
+              or r.label:match("[%d%.]+%%") or ""
+            mk.label:SetText(short); mk.label:ClearAllPoints()
+            mk.label:SetPoint("TOP", self.barBG, "BOTTOMLEFT", xm, -4); mk.label:Show()
+            lastX = xm
+          end
         end
       end
+      local mk = self.markers[6]
+      mk.tex:SetColorTexture(1, 0.82, 0, 1)
+      mk.tex:ClearAllPoints(); mk.tex:SetPoint("TOP", self.barBG, "TOPRIGHT", 0, 4); mk.tex:Show()
+      mk.label:SetText("#1"); mk.label:ClearAllPoints()
+      mk.label:SetPoint("TOPRIGHT", self.barBG, "BOTTOMRIGHT", 0, -4); mk.label:Show()
+      y = y - 30
+    else
+      self.barBG:Hide(); self.bar:Hide(); self.you:Hide()
     end
-    local mk = popup.markers[6]
-    mk.tex:SetColorTexture(0.9, 0.8, 0.5, 1)
-    mk.tex:ClearAllPoints(); mk.tex:SetPoint("TOP", popup.barBG, "TOPRIGHT", 0, 4); mk.tex:Show()
-    mk.label:SetText("#1"); mk.label:ClearAllPoints()
-    mk.label:SetPoint("TOPRIGHT", popup.barBG, "BOTTOMRIGHT", 0, -4); mk.label:Show()
-    y = y - 32
-  else
-    popup.barBG:Hide(); popup.bar:Hide(); popup.you:Hide()
-  end
 
-  -- Goals
-  local goals = {}
-  if b and ev.amount then
-    for _, a in ipairs({ 50, 10, 1 }) do
-      local v = b["p" .. a]
-      if v then
-        local gap = v - ev.amount
-        local label = a == 50 and L["Median"] or string.format(L["Top %s"], a .. "%")
-        local diff
-        if a == 50 then
-          diff = gap > 0 and ("|cffff8080-" .. FormatAmount(gap) .. "|r")
-            or ("|cff1eff00+" .. FormatAmount(-gap) .. "|r")
-        else
-          diff = gap > 0 and ("+" .. FormatAmount(gap)) or ("|cff1eff00" .. L["reached"] .. "|r")
-        end
-        goals[#goals + 1] = { label, FormatAmount(v), diff }
+    -- Table: each point with its DPS and how far you are from it
+    for i, row in ipairs(self.cmp) do
+      local r = rowsData[i]
+      if r then
+        row.stripe:ClearAllPoints(); row.stripe:SetPoint("TOPLEFT", self.f, "TOPLEFT", P, y + 3)
+        row.stripe:SetSize(W - 2 * P, 18); row.stripe:SetShown(i % 2 == 1)
+        row.label:SetText(r.label); row.label:SetWidth(W * 0.42); self:Place(row.label, P + 6, y)
+        row.value:SetText(FormatAmount(r.v) .. " " .. metricName); self:Place(row.value, -(P + W * 0.30), y, "TOPRIGHT")
+        local diff = ev.amount and ns.DiffText(ev.amount, r.v) or "|cff777777—|r"
+        local gapTxt = ""
+        if ev.amount and r.v > ev.amount then gapTxt = "|cff888888" .. string.format(L["%s short"], FormatAmount(r.v - ev.amount)) .. "|r" end
+        row.diff:SetText(diff); self:Place(row.diff, -(P + W * 0.17), y, "TOPRIGHT")
+        row.note:SetText(r.note and ("|cffffd100" .. r.note .. "|r") or gapTxt); self:Place(row.note, -(P + 6), y + 1, "TOPRIGHT")
+        y = y - 19
+      else
+        row.stripe:Hide(); row.label:Hide(); row.value:Hide(); row.diff:Hide(); row.note:Hide()
       end
     end
-    if b.top then
-      goals[#goals + 1] = { "#1", FormatAmount(b.top), string.format(L["you're at %d%%"], math.floor((ev.ofTop or 0) * 100 + 0.5)) }
-    end
-  end
-  for i, g in ipairs(popup.goals) do
-    local row = goals[i]
-    if row then
-      g[1]:SetText(row[1]); Place(g[1], PAD, y)
-      g[2]:SetText(row[2]); Place(g[2], PAD + 80, y)
-      g[3]:SetText(row[3]); Place(g[3], -PAD, y, "TOPRIGHT")
-      y = y - 17
-    else
-      for c = 1, 3 do g[c]:Hide() end
-    end
+  else
+    self.cmpTitle:Hide(); self.barBG:Hide(); self.bar:Hide(); self.you:Hide()
+    for _, row in ipairs(self.cmp) do row.stripe:Hide(); row.label:Hide(); row.value:Hide(); row.diff:Hide(); row.note:Hide() end
+    self.noData:SetText(string.format(L["No Warcraft Logs data yet for %s in %s +%d."], who, ns.DungeonName(run), run.level or 0)
+      .. "\n|cff888888" .. L["Run tools/update_data.py to fetch it for your keys."] .. "|r")
+    self.noData:SetWordWrap(true); self.noData:SetWidth(W - 2 * P)
+    self:Place(self.noData, P, y)
+    y = y - 34
   end
 
-  -- Why: deaths, avoidable damage, interrupts
+  -- What happened: deaths, avoidable damage, interrupts
   local why = WhyText(run)
   if why then
-    y = y - 6
-    popup.why:SetText(why); popup.why:SetWidth(BAR_W + 6); Place(popup.why, PAD, y)
-    y = y - popup.why:GetStringHeight() - 2
+    y = y - 8
+    self.why:SetText(why); self.why:SetWidth(W - 2 * P); self:Place(self.why, P, y)
+    y = y - self.why:GetStringHeight() - 2
   else
-    popup.why:Hide()
+    self.why:Hide()
   end
 
   -- Whole group, each against their own spec
   local members = run.group or {}
   if #members > 0 and KP_DB.groupRanks ~= false then
     y = y - 10
-    popup.groupTitle:SetText(L["Your group"]); Place(popup.groupTitle, PAD, y)
+    self.groupTitle:SetText(L["Your group"]); self:Place(self.groupTitle, P, y)
     y = y - 17
-    for i, row in ipairs(popup.members) do
+    for i, row in ipairs(self.members) do
       local m = members[i]
       if m then
         local info = ns.SpecInfo(m.specID)
         local metric = (info and info.role == "healer") and "hps" or "dps"
         local mev = ns.Rank(run.map, m.specID, run.level, metric, m[metric])
-        local label = string.format("|c%s%s|r |cff999999%s|r", ClassColor(m.classFile), m.name or "?", info and info.name or "")
-        row[1]:SetText(label); Place(row[1], PAD, y)
-        row[2]:SetText(FormatAmount(m[metric]) .. " " .. (metric == "hps" and "HPS" or "DPS")); Place(row[2], -110, y, "TOPRIGHT")
-        row[3]:SetText(ns.TopText(mev)); Place(row[3], -PAD, y, "TOPRIGHT")
+        row[1]:SetText(string.format("|c%s%s|r |cff999999%s|r", ClassColor(m.classFile), m.name or "?", info and info.name or ""))
+        self:Place(row[1], P, y)
+        row[2]:SetText(FormatAmount(m[metric]) .. " " .. (metric == "hps" and "HPS" or "DPS")); self:Place(row[2], -(P + 110), y, "TOPRIGHT")
+        row[3]:SetText(ns.TopText(mev)); self:Place(row[3], -P, y, "TOPRIGHT")
         y = y - 15
       else
         for c = 1, 3 do row[c]:Hide() end
       end
     end
   else
-    popup.groupTitle:Hide()
-    for _, row in ipairs(popup.members) do for c = 1, 3 do row[c]:Hide() end end
+    self.groupTitle:Hide()
+    for _, row in ipairs(self.members) do for c = 1, 3 do row[c]:Hide() end end
+  end
+
+  -- Your next rating goal, only right after the key you just finished
+  local live = ns.LiveRuns()
+  local goal = (self.opts.showGoal and run.src == "live" and live[#live] == run and ns.GoalLine) and ns.GoalLine() or nil
+  if goal then
+    y = y - 10
+    self.goal:SetText(goal); self:Place(self.goal, P, y)
+    y = y - 16
+  else
+    self.goal:Hide()
   end
 
   local foot
@@ -608,26 +708,43 @@ function ns.ShowRunPopup(run)
     foot = "Warcraft Logs · " .. run.report
   elseif b then
     foot = L["Warcraft Logs benchmarks"] .. " · " .. (KP_DATA.updatedAt or "")
-    if ev.benchLevel ~= run.level then foot = foot .. " · " .. string.format(L["using +%d data"], ev.benchLevel) end
   else
     foot = run.src == "logs" and L["Imported from Warcraft Logs"] or L["Recorded in game"]
   end
-  -- Your next goal, only for the key you just finished
-  local live = ns.LiveRuns()
-  local goal = (run.src == "live" and live[#live] == run and ns.GoalLine) and ns.GoalLine() or nil
-  if goal then
-    y = y - 10
-    popup.goal:SetText(goal); Place(popup.goal, PAD, y)
-    y = y - 16
-  else
-    popup.goal:Hide()
-  end
+  if ev.top and not ev.exact then foot = foot .. " · " .. L["~ estimated rank"] end
+  y = y - 12
+  self.footer:SetText(foot); self.footer:SetWidth(W - 2 * P - 80)
+  self:Place(self.footer, P, y)
+  self.share:ClearAllPoints(); self.share:SetPoint("TOPRIGHT", self.f, "TOPRIGHT", -P, y + 4); self.share:Show()
+  return -y + 20
+end
 
-  popup.footer:SetText(foot)
-  popup.footer:SetWidth(BAR_W - 70)
-  y = y - 10
-  Place(popup.footer, PAD, y)
-  popup:SetHeight(-y + 34)
+---------------------------------------------------------------------------
+-- End-of-key pop-up (solid, movable)
+---------------------------------------------------------------------------
+local POP_W = 470
+local popup = CreateFrame("Frame", "KeystonePercentileRunPopup", UIParent, "BackdropTemplate")
+popup:SetSize(POP_W, 300)
+popup:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+popup:SetFrameStrata("DIALOG")
+popup:SetToplevel(true)
+popup:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+popup:SetBackdropColor(0.06, 0.06, 0.07, 1)
+popup:SetBackdropBorderColor(0.45, 0.37, 0.18, 1)
+popup:SetMovable(true); popup:EnableMouse(true); popup:RegisterForDrag("LeftButton")
+popup:SetClampedToScreen(true)
+popup:SetScript("OnDragStart", popup.StartMoving)
+popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
+popup:Hide()
+tinsert(UISpecialFrames, "KeystonePercentileRunPopup")
+
+local close = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
+close:SetPoint("TOPRIGHT", 2, 2)
+
+local popDetail = ns.NewRunDetail(popup, POP_W, { metaRight = 34, showGoal = true })
+
+function ns.ShowRunPopup(run)
+  popup:SetHeight(popDetail:Render(run))
   popup:Show()
 end
 
@@ -645,7 +762,7 @@ local pending, retries, scheduled = false, 0, false
 local function Finalize()
   scheduled = false
   if not pending then return end
-  local map, level, timeMs, onTime, upgrades = CompletionInfo()
+  local map, level, timeMs, onTime, upgrades, newRating = CompletionInfo()
   if not map then pending = false return end
 
   local snap = MeterSnapshot()
@@ -677,6 +794,7 @@ local function Finalize()
     specID = id.specID, spec = id.specName, className = id.className, classFile = classFile,
     role = id.role == "healer" and "healer" or (id.role == "tank" and "tank" or "dps"),
     hero = id.hero, src = "live", approx = (base == nil) or nil,
+    rating = (type(newRating) == "number" and not ns.IsSecret(newRating) and newRating > 0) and newRating or nil,
   }
 
   -- Group members (everyone but you who the meter saw)

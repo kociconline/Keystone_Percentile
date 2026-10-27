@@ -42,12 +42,9 @@ local function Check(label, tip, get, set)
   y = y - 30
 end
 
-Check(L["Show next to the Mythic+ window"], L["Your Top % and goals beside Blizzard's Mythic+ window whenever you open it."],
+Check(L["Show next to the Mythic+ window"], L["Your Top % and goals to the right of Blizzard's Mythic+ window (under Raider.IO's panel if it's there)."],
   function() return KP_DB.dock ~= false end,
   function(v) KP_DB.dock = v; if ns.RefreshDock then ns.RefreshDock() end end)
-Check(L["Place it beside the window instead"], L["Puts the panel to the right of the Mythic+ window instead of inside it. Other addons, like Raider.IO, often use that spot."],
-  function() return KP_DB.dockOutside end,
-  function(v) KP_DB.dockOutside = v; if ns.RefreshDock then ns.RefreshDock() end end)
 Check(L["Show minimap button"], L["Left-click opens the window, right-click opens these settings."],
   function() return not (KP_DB.minimap and KP_DB.minimap.hide) end,
   function(v) KP_DB.minimap = KP_DB.minimap or {}; KP_DB.minimap.hide = not v; ns.RefreshMinimap() end)

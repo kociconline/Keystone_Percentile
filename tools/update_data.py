@@ -256,7 +256,7 @@ def is_example(entries):
     return any("YourMain" in json.dumps(c) or "YOUR-REALM" in json.dumps(c) for c in entries)
 
 
-def import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, season_name, cache):
+def import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, season_name, cache, timers=None):
     """cache: {char_key: {zone_id: [runs]}}, updated in place. Returns
     (imported, priority, rate_limited)."""
     imported, priority, limited = {}, set(), False
@@ -269,7 +269,7 @@ def import_wcl(api, char_list, chars, zones, zone, dungeon_map, spec_labels, sea
         else:
             print(f"  Importing runs for {c['name']}...")
             try:
-                runs = wcl.import_character_runs(api, c, zones, dungeon_map, char_cache)
+                runs = wcl.import_character_runs(api, c, zones, dungeon_map, char_cache, timers)
             except wcl.RateLimited:
                 limited = True
                 runs = sorted((r for zid, zr in char_cache.items() if zid in wanted for r in zr), key=lambda x: x["t"])
@@ -318,6 +318,8 @@ def main():
     dungeons = {d["challenge_mode_id"]: d["name"] for d in season.get("dungeons", [])
                 if d.get("challenge_mode_id")}
     dungeon_map = {wcl.norm(n): i for i, n in dungeons.items()}
+    timers = {d["challenge_mode_id"]: d["keystone_timer_seconds"] for d in season.get("dungeons", [])
+              if d.get("challenge_mode_id") and d.get("keystone_timer_seconds")}
     now = datetime.datetime.now(datetime.timezone.utc)
     stamp = {"season": name, "updatedAt": now.strftime("%Y-%m-%d %H:%M UTC"), "updatedEpoch": int(now.timestamp())}
 
@@ -435,7 +437,7 @@ def main():
             # Only the current season unless asked for more.
             import_zones = zones if a.all_seasons else ([zone] if zone else [])
             imported, priority, limited = import_wcl(api, char_list, chars, import_zones, zone, dungeon_map,
-                                                     spec_labels, name, runs_cache)
+                                                     spec_labels, name, runs_cache, timers)
             if zone and priority and not a.no_benchmarks and not limited:
                 levels = sorted({lv for _, _, lv in priority})
                 # Number of ranked runs per key, from your own runs: saves page probing.

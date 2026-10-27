@@ -3,10 +3,11 @@
 local ADDON, ns = ...
 local L = ns.L
 
-local W, ROW_H, VISIBLE = 660, 22, 14
+local W, ROW_H, VISIBLE = 720, 22, 14
+local HEADER = 64 -- title row + tab row
 local COLS = { -- x offset, width, justify
-  date = { 10, 50, "LEFT" }, dungeon = { 62, 172, "LEFT" }, result = { 236, 40, "LEFT" },
-  dps = { 278, 62, "RIGHT" }, median = { 344, 62, "RIGHT" }, rank = { 414, 96, "LEFT" }, bar = { 514, 100 },
+  date = { 10, 44, "LEFT" }, dungeon = { 58, 150, "LEFT" }, result = { 212, 96, "LEFT" },
+  dps = { 310, 62, "RIGHT" }, median = { 380, 100, "RIGHT" }, top = { 486, 100, "RIGHT" }, rank = { 592, 96, "RIGHT" },
 }
 
 local state = { dungeon = nil, spec = nil, season = nil, sort = "date" }
@@ -17,11 +18,11 @@ local SORT_NAMES = { date = L["Sort: date"], rank = L["Sort: rank"], dps = L["So
 -- Window
 ---------------------------------------------------------------------------
 local win = CreateFrame("Frame", "KeystonePercentileHistory", UIParent, "BackdropTemplate")
-win:SetSize(W, 110 + VISIBLE * ROW_H)
+win:SetSize(W, 110 + HEADER - 34 + VISIBLE * ROW_H)
 win:SetPoint("CENTER")
 win:SetFrameStrata("HIGH")
 win:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-win:SetBackdropColor(0, 0, 0, 0.85)
+win:SetBackdropColor(0.05, 0.05, 0.06, 0.97)
 win:SetBackdropBorderColor(0, 0, 0, 1)
 win:SetMovable(true); win:EnableMouse(true); win:RegisterForDrag("LeftButton")
 win:SetClampedToScreen(true)
@@ -40,6 +41,11 @@ win.icon:SetTexture("Interface\\AddOns\\Keystone_Percentile\\Media\\Icon")
 win.title = win:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 win.title:SetPoint("TOPLEFT", 36, -12)
 win.title:SetText("Keystone Percentile")
+win.count = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+win.count:SetPoint("TOPRIGHT", -34, -14)
+win.sep = win:CreateTexture(nil, "ARTWORK")
+win.sep:SetColorTexture(1, 1, 1, 0.08); win.sep:SetHeight(1)
+win.sep:SetPoint("TOPLEFT", 8, -HEADER + 2); win.sep:SetPoint("TOPRIGHT", -8, -HEADER + 2)
 
 -- Each tab is a view frame filling the window; only one is shown.
 local tabs, views = {}, {}
@@ -48,13 +54,13 @@ local function LayoutTabs()
   table.sort(tabs, function(a, b) return a.order < b.order end)
   for i, b in ipairs(tabs) do
     b:ClearAllPoints()
-    b:SetPoint("TOPLEFT", 225 + (i - 1) * 88, -10)
+    b:SetPoint("TOPLEFT", 10 + (i - 1) * 88, -36)
   end
 end
 
 local function NewView(key, label, refresh, order)
   local v = CreateFrame("Frame", nil, win)
-  v:SetPoint("TOPLEFT", 0, -34); v:SetPoint("BOTTOMRIGHT")
+  v:SetPoint("TOPLEFT", 0, -HEADER); v:SetPoint("BOTTOMRIGHT")
   v:Hide()
   v.refresh = refresh
   views[key] = v
@@ -75,6 +81,8 @@ ns.NewHistoryView = NewView
 function ns.ShowHistoryTab(key)
   if not views[key] then key = "overview" end
   KP_DB.historyTab = key
+  win.count:SetText("")
+  if ns.HideRunDetail then ns.HideRunDetail() end
   for k, v in pairs(views) do
     if k == key then v:Show(); if v.refresh then v.refresh() end else v:Hide() end
   end
@@ -89,8 +97,6 @@ local Refresh -- defined below
 local runsView = NewView("runs", L["Runs"], function() Refresh() end, 20)
 ns.HistoryWindow = win
 
-win.count = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-win.count:SetPoint("TOPRIGHT", -34, 18)
 
 -- Filter buttons cycle through their options on click (right-click goes back).
 local function FilterButton(x, width)
@@ -114,23 +120,23 @@ win.fSpec = FilterButton(314, 110)
 win.fSort = FilterButton(430, 80)
 
 win.summary = runsView:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-win.summary:SetPoint("TOPRIGHT", -14, -8)
+win.summary:SetPoint("TOPLEFT", 14, -32)
 
 -- Column headers
-local headers = { { "date", L["Date"] }, { "dungeon", L["Dungeon"] }, { "result", L["Result"] },
-  { "dps", L["DPS / HPS"] }, { "median", L["Median"] }, { "rank", L["Rank"] }, { "bar", L["vs #1"] } }
+local headers = { { "date", L["Date"] }, { "dungeon", L["Dungeon"] }, { "result", L["Key · result"] },
+  { "dps", L["Your DPS"] }, { "median", L["Median (spec)"] }, { "top", L["#1 (spec)"] }, { "rank", L["Your rank"] } }
 for _, h in ipairs(headers) do
   local c = COLS[h[1]]
   local fs = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  fs:SetPoint("TOPLEFT", c[1], -34)
+  fs:SetPoint("TOPLEFT", c[1], -54)
   fs:SetWidth(c[2]); fs:SetJustifyH(c[3] or "LEFT")
   fs:SetText(h[2])
 end
 
 -- Scrolling list
 local scroll = CreateFrame("ScrollFrame", "KeystonePercentileHistoryScroll", runsView, "UIPanelScrollFrameTemplate")
-scroll:SetPoint("TOPLEFT", 0, -50)
-scroll:SetPoint("BOTTOMRIGHT", -28, 30)
+scroll:SetPoint("TOPLEFT", 0, -70)
+scroll:SetPoint("BOTTOMRIGHT", -28, 40)
 local content = CreateFrame("Frame", nil, scroll)
 content:SetSize(W - 28, 1)
 scroll:SetScrollChild(content)
@@ -141,7 +147,9 @@ win.empty:SetWidth(W - 60)
 
 win.footer = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 win.footer:SetPoint("BOTTOMLEFT", 12, 10)
-win.footer:SetText(L["Click a run to open its summary · |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12|t best run per dungeon · ~ estimated rank"])
+win.footer:SetText(L["Median and #1: same class and spec, same dungeon and key level · * nearest key level · ~ estimated"]
+  .. "\n" .. L["Click a run for details · |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12|t best run per dungeon"])
+win.footer:SetJustifyH("LEFT")
 
 local rows = {}
 local function GetRow(i)
@@ -155,29 +163,13 @@ local function GetRow(i)
   r.line:SetPoint("TOPLEFT", 8, 0); r.line:SetPoint("TOPRIGHT", -4, 0); r.line:SetHeight(1)
   r.line:SetColorTexture(1, 1, 1, 0.08)
   for key, c in pairs(COLS) do
-    if key ~= "bar" then
-      local fs = r:CreateFontString(nil, "OVERLAY", key == "dungeon" and "GameFontHighlight" or "GameFontHighlightSmall")
-      fs:SetPoint("LEFT", c[1], 0); fs:SetWidth(c[2]); fs:SetJustifyH(c[3]); fs:SetWordWrap(false)
-      r[key] = fs
-    end
+    local fs = r:CreateFontString(nil, "OVERLAY", key == "dungeon" and "GameFontHighlight" or "GameFontHighlightSmall")
+    fs:SetPoint("LEFT", c[1], 0); fs:SetWidth(c[2]); fs:SetJustifyH(c[3]); fs:SetWordWrap(false)
+    r[key] = fs
   end
-  local c = COLS.bar
-  r.barBG = r:CreateTexture(nil, "ARTWORK")
-  r.barBG:SetPoint("LEFT", c[1], 0); r.barBG:SetSize(c[2], 6)
-  r.barBG:SetColorTexture(0.17, 0.19, 0.23, 1)
-  r.bar = r:CreateTexture(nil, "ARTWORK", nil, 1)
-  r.bar:SetPoint("LEFT", r.barBG, "LEFT"); r.bar:SetHeight(6)
-  r:SetScript("OnEnter", function(self)
-    self.hl:Show()
-    if self.run and self.run.report then
-      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-      GameTooltip:AddLine("Warcraft Logs report")
-      GameTooltip:AddLine(self.run.report, 1, 1, 1)
-      GameTooltip:Show()
-    end
-  end)
-  r:SetScript("OnLeave", function(self) self.hl:Hide(); GameTooltip:Hide() end)
-  r:SetScript("OnClick", function(self) if self.run then ns.ShowRunPopup(self.run) end end)
+  r:SetScript("OnEnter", function(self) self.hl:Show() end)
+  r:SetScript("OnLeave", function(self) self.hl:Hide() end)
+  r:SetScript("OnClick", function(self) if self.run then ns.ShowRunDetail(self.run) end end)
   rows[i] = r
   return r
 end
@@ -212,10 +204,18 @@ local function Median(t)
   return (#t % 2 == 1) and t[m] or (t[m] + t[m + 1]) / 2
 end
 
-local function ResultText(run)
-  if run.timed == true then return "|cff1eff00+" .. (run.upgrades or 1) .. "|r" end
-  if run.timed == false then return "|cffff5555Over|r" end
-  return "|cff777777—|r"
+-- "+18  Timed +2" / "+18  Over time"
+local function KeyText(run)
+  local timed, up = ns.RunResult(run)
+  local res = timed == true and ("|cff1eff00" .. string.format(L["Timed +%d"], up or 1) .. "|r")
+    or timed == false and ("|cffff6060" .. L["Over time"] .. "|r") or ""
+  return string.format("|cffffd100+%s|r  %s", run.level or "?", res)
+end
+
+-- "500k +22%": a benchmark value and how you compare with it.
+local function CompareCell(amount, v, near)
+  if not v then return "|cff777777—|r" end
+  return string.format("|cffbbbbbb%s%s|r %s", ns.FormatDPS(v), near and "*" or "", ns.DiffText(amount, v))
 end
 
 local all = {}
@@ -260,8 +260,8 @@ function Refresh()
   local med = Median(tops)
   if bestAll then
     win.summary:SetText(string.format("|cff999999%s|r |c%s%s|r  |cff999999· %s|r |c%s%s|r",
-      L["Best"], ns.PctColor(bestAll), string.format(L["Top %s"], ns.FormatPct(bestAll)),
-      L["Median"], ns.PctColor(med), string.format(L["Top %s"], ns.FormatPct(med))))
+      L["Best run"], ns.PctColor(bestAll), string.format(L["Top %s"], ns.FormatPct(bestAll)),
+      L["Typical run"], ns.PctColor(med), string.format(L["Top %s"], ns.FormatPct(med))))
   else
     win.summary:SetText("")
   end
@@ -279,27 +279,16 @@ function Refresh()
     local row = GetRow(i)
     row.run = r
     row.date:SetText("|cffaaaaaa" .. date("%b %d", r.t or 0) .. "|r")
-    row.dungeon:SetText(string.format("%s +%s", ns.DungeonName(r), r.level or "?"))
-    row.result:SetText(ResultText(r))
+    row.dungeon:SetText(ns.DungeonName(r))
+    row.result:SetText(KeyText(r))
     row.dps:SetText(ns.FormatDPS(r._ev.amount) .. (r._ev.metric == "hps" and " |cff888888H|r" or ""))
-    -- Median for the same dungeon, spec and key level: green when you beat it
-    local med = r._ev.bench and r._ev.bench.p50
-    if med and r._ev.amount then
-      row.median:SetText(string.format("|cff%s%s|r", r._ev.amount >= med and "1eff00" or "ff8080", ns.FormatDPS(med)))
-    else
-      row.median:SetText("|cff777777—|r")
-    end
+    -- Median and #1 of your class and spec, same dungeon and key level
+    local b, amount = r._ev.bench, r._ev.amount
+    local near = b and r._ev.benchLevel ~= r.level
+    row.median:SetText(CompareCell(amount, b and b.p50, near))
+    row.top:SetText(CompareCell(amount, b and b.top, near))
     local star = (best[ns.DungeonName(r)] == r) and " |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12|t" or ""
     row.rank:SetText(ns.TopText(r._ev) .. star)
-    if r._ev.ofTop then
-      row.barBG:Show(); row.bar:Show()
-      row.bar:SetWidth(math.max(1, math.min(r._ev.ofTop, 1) * COLS.bar[2]))
-      local hex = ns.PctColor(r._ev.top or 100)
-      row.bar:SetColorTexture(tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255,
-        tonumber(hex:sub(7, 8), 16) / 255, 1)
-    else
-      row.barBG:Hide(); row.bar:Hide()
-    end
     row:Show()
   end
   for i = #list + 1, #rows do rows[i]:Hide(); rows[i].run = nil end
@@ -314,6 +303,33 @@ function Refresh()
     win.empty:Hide()
   end
 end
+
+---------------------------------------------------------------------------
+-- Run detail page (inside the window, covers the list; Back returns)
+---------------------------------------------------------------------------
+local detailView = CreateFrame("Frame", nil, runsView, "BackdropTemplate")
+detailView:SetAllPoints()
+detailView:SetFrameLevel(runsView:GetFrameLevel() + 20)
+detailView:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+detailView:SetBackdropColor(0.05, 0.05, 0.06, 1)
+detailView:EnableMouse(true)
+detailView:Hide()
+local back = CreateFrame("Button", nil, detailView, "UIPanelButtonTemplate")
+back:SetSize(110, 22)
+back:SetPoint("TOPLEFT", 12, -8)
+back:SetText("< " .. L["Back to runs"])
+local detail = ns.NewRunDetail(detailView, W, { top = 40 })
+
+function ns.ShowRunDetail(run)
+  if not win:IsShown() or KP_DB.historyTab ~= "runs" then
+    win:Show(); ns.ShowHistoryTab("runs")
+  end
+  detail:Render(run)
+  detailView:Show()
+end
+
+function ns.HideRunDetail() detailView:Hide() end
+back:SetScript("OnClick", function() detailView:Hide() end)
 
 local function Bind(btn, field)
   btn:SetScript("OnClick", function(self, button)

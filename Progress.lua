@@ -37,10 +37,60 @@ function ns.RecordSnapshot()
   while #hist > MAX_SNAPSHOTS do table.remove(hist, 1) end
 end
 
--- The snapshot closest to (and not after) a time.
+---------------------------------------------------------------------------
+-- Whole season, also before the addon was installed: your rating rebuilt from
+-- your runs. Rating is the sum of your best run's score in each dungeon; runs
+-- imported from Warcraft Logs carry that score, keys finished with the addon
+-- carry your new rating. Days with a real snapshot use the snapshot.
+---------------------------------------------------------------------------
+local function Rebuilt(season)
+  local list = {}
+  for _, r in ipairs(ns.AllRuns()) do
+    if r.t and r.season == season and (r.score or r.rating) then list[#list + 1] = r end
+  end
+  table.sort(list, function(a, b) return a.t < b.t end)
+  local best, out, prev = {}, {}, 0
+  for _, r in ipairs(list) do
+    if r.score and r.map and (not best[r.map] or r.score > best[r.map]) then best[r.map] = r.score end
+    local sum = 0
+    for _, v in pairs(best) do sum = sum + v end
+    local total = math.max(prev, r.rating or 0, sum)
+    prev = total
+    local day = date("%Y-%m-%d", r.t)
+    local e = { d = day, t = r.t, score = math.floor(total + 0.5), rebuilt = true, season = season }
+    if out[#out] and out[#out].d == day then out[#out] = e else out[#out + 1] = e end
+  end
+  return out
+end
+
+-- Real snapshots plus rebuilt days, current season, oldest first.
+local series = {}
+local function Series(season)
+  local byDay = {}
+  for _, e in ipairs(Rebuilt(season)) do byDay[e.d] = e end
+  for _, e in ipairs(History()) do
+    if e.season == season then byDay[e.d] = e end
+  end
+  local out = {}
+  for _, e in pairs(byDay) do out[#out + 1] = e end
+  table.sort(out, function(a, b) return a.t < b.t end)
+  -- Rating never drops in a season; a rebuilt day after a real snapshot can
+  -- miss keys that weren't logged, so it's never shown below the last real one.
+  local floor = 0
+  for _, e in ipairs(out) do
+    if e.rebuilt then
+      if e.score < floor then e.score = floor end
+    else
+      floor = math.max(floor, e.score)
+    end
+  end
+  return out
+end
+
+-- The point closest to (and not after) a time.
 local function SnapshotAt(t)
   local found
-  for _, e in ipairs(History()) do
+  for _, e in ipairs(series) do
     if e.t <= t then found = e else break end
   end
   return found
@@ -50,7 +100,7 @@ end
 -- Progress view
 ---------------------------------------------------------------------------
 local GW, GH = 540, 200
-local range = 30 -- days; 0 = whole season
+local range = 0 -- days; 0 = whole season
 
 local view = ns.NewHistoryView("progress", L["Progress"], function() ns.RefreshProgress() end, 30)
 ns.ProgressView = view
@@ -90,7 +140,7 @@ end)
 
 view.note = view:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 view.note:SetPoint("BOTTOMLEFT", 12, 10)
-view.note:SetText(L["Your rating is saved once a day while you play. Hover the graph for details."])
+view.note:SetText(L["Before you installed the addon, your rating is rebuilt from your keys on Warcraft Logs. Hover a dot for details."])
 
 local lines, dots, gridLines = {}, {}, {}
 
@@ -114,6 +164,7 @@ local function Dot(i)
       GameTooltip:SetOwner(self, "ANCHOR_TOP")
       GameTooltip:AddLine(e.d)
       GameTooltip:AddDoubleLine(L["Rating"], ns.Num(e.score), 1, 1, 1, 1, 1, 1)
+      if e.rebuilt then GameTooltip:AddLine(L["Rebuilt from your keys that day"], 0.6, 0.6, 0.6) end
       if e.top then GameTooltip:AddDoubleLine(L["Overall"], string.format(L["Top %s"], ns.FormatPct(e.top)), 1, 1, 1, ns.HexToRGB(ns.PctColor(e.top))) end
       if e.specTop then
         local info = ns.SpecInfo(e.specID)
@@ -143,7 +194,9 @@ end
 function ns.RefreshProgress()
   ns.RecordSnapshot()
   local hist = History()
-  local now = hist[#hist]
+  series = Series(KP_DATA.season)
+  local now = hist[#hist] or series[#series]
+  local first = series[1]
   rangeBtn:SetText(range == 30 and L["Last 30 days"] or L["Whole season"])
 
   if now then
@@ -152,8 +205,8 @@ function ns.RefreshProgress()
     view.today:SetText(string.format("|c%s%s|r  |c%s%s|r %s%s", ns.PctColor(now.top or 100), ns.Num(now.score),
       ns.PctColor(now.top or 100), now.top and string.format(L["Top %s"], ns.FormatPct(now.top)) or "",
       now.top and L["overall"] or "", spec))
-    view.change7:SetText(ChangeText(L["This week"], SnapshotAt(now.t - 7 * DAY), now))
-    view.change30:SetText(ChangeText(L["Last 30 days"], SnapshotAt(now.t - 30 * DAY), now))
+    view.change7:SetText(ChangeText(L["Last 30 days"], SnapshotAt(now.t - 30 * DAY), now))
+    view.change30:SetText(first and first ~= now and ChangeText(L["Since your first key this season"], first, now) or "")
   else
     view.today:SetText(""); view.change7:SetText(""); view.change30:SetText("")
   end
@@ -161,15 +214,15 @@ function ns.RefreshProgress()
   -- Points in range, current season only
   local pts = {}
   local from = (range > 0 and now) and (now.t - range * DAY) or 0
-  for _, e in ipairs(hist) do
-    if e.t >= from and (not now or e.season == now.season) then pts[#pts + 1] = e end
+  for _, e in ipairs(series) do
+    if e.t >= from then pts[#pts + 1] = e end
   end
   for _, l in pairs(lines) do if l then l:Hide() end end
   for _, d in pairs(dots) do d:Hide() end
   for _, g in pairs(gridLines) do g:Hide() end
 
   if #pts < 2 then
-    graph.empty:SetText(L["The graph appears after two days of play. Your rating is saved once a day."])
+    graph.empty:SetText(L["Not enough history yet. Import your Warcraft Logs runs with tools/update_data.py to see the whole season."])
     graph.empty:Show()
     graph.maxLabel:SetText(""); graph.minLabel:SetText(""); graph.startLabel:SetText(""); graph.endLabel:SetText("")
     return
@@ -204,7 +257,8 @@ function ns.RefreshProgress()
   local px, py
   for i, e in ipairs(pts) do
     local x, y = XY(e)
-    local r, g, b = ns.HexToRGB(ns.PctColor(e.top or 100))
+    local r, g, b
+    if e.top then r, g, b = ns.HexToRGB(ns.PctColor(e.top)) else r, g, b = 0.95, 0.78, 0.38 end
     if px then
       local l = Line(i)
       if l then

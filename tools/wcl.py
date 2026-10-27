@@ -25,10 +25,13 @@ CLASS_NAMES = ["Death Knight", "Demon Hunter", "Druid", "Evoker", "Hunter", "Mag
                "Paladin", "Priest", "Rogue", "Shaman", "Warlock", "Warrior"]
 
 # Percentile anchors stored per benchmark: top X% -> amount at that rank.
-BENCH_VERSION = 2  # bump to discard cached benchmarks made differently
+BENCH_VERSION = 3  # bump when benchmarks gain new fields; older ones get refreshed
+USABLE_VERSIONS = {2, 3}  # still correct (same key level), just fewer points
 
-# #1 is stored as "top"; these are the other points kept per benchmark.
-ANCHORS = [1, 10, 50]
+# #1 is stored as "top"; these are the other points kept per benchmark (DPS of
+# the run at that rank, same class and spec). 0.1/0.5/1/2/5 usually sit on the
+# first page, so they cost almost nothing extra.
+ANCHORS = [0.1, 0.5, 1, 2, 5, 10, 25, 50]
 
 # Healers are ranked on healing per second, everyone else on damage.
 HEALER_SPECS = {65, 105, 256, 257, 264, 270, 1468}
@@ -195,6 +198,29 @@ def row_time_ms(r):
     return None
 
 
+MEDALS = {"gold": 3, "silver": 2, "bronze": 1}
+
+
+def run_result(r, timer=None):
+    """(timed, upgrades) for a ranked run: from its medal, or from its time
+    against the dungeon timer (+3 under 60%, +2 under 80%). (None, None) if unknown."""
+    m = r.get("medal")
+    if isinstance(m, str):
+        ml = m.lower()
+        for k, v in MEDALS.items():
+            if k in ml:
+                return True, v
+        if ml in ("none", "fail", "failed", "depleted", "red"):
+            return False, 0
+    dur = r.get("duration")
+    if isinstance(dur, (int, float)) and dur > 0 and timer:
+        sec = dur / 1000
+        if sec > timer:
+            return False, 0
+        return True, 3 if sec <= timer * 0.6 else 2 if sec <= timer * 0.8 else 1
+    return None, None
+
+
 def row_spec(r):
     s = r.get("spec") or r.get("specName") or r.get("bestSpec")
     return s if isinstance(s, str) else None
@@ -203,7 +229,7 @@ def row_spec(r):
 # --------------------------------------------------------------------------
 # 1. Your characters' ranked runs
 # --------------------------------------------------------------------------
-def import_character_runs(api, char, zones, dungeon_map, cache=None):
+def import_character_runs(api, char, zones, dungeon_map, cache=None, timers=None):
     """char: {"region","realm","name"} -> list of run dicts for the addon.
     cache: {zone_id: [runs]} for this character, updated in place. Finished
     (frozen) seasons already in the cache are not fetched again. Raises
@@ -259,6 +285,13 @@ def import_character_runs(api, char, zones, dungeon_map, cache=None):
                             "report": f'{rep.get("code")}#{rep.get("fightID")}' if rep.get("code") else None,
                             "src": "logs",
                         }
+                        timed, up = run_result(r, (timers or {}).get(run["map"]))
+                        if timed is not None:
+                            run["timed"], run["upgrades"] = timed, up
+                        # Rating points this run is worth (used to rebuild your
+                        # season's rating graph): best per dungeon adds up to your rating.
+                        if isinstance(r.get("score"), (int, float)) and r["score"] > 0:
+                            run["score"] = round(r["score"], 1)
                     # byBracket: rankPercent compares with runs at the same key level only.
                     pct = r.get("rankPercent") if isinstance(r.get("rankPercent"), (int, float)) else None
                     total = r.get("rankTotalParses") if isinstance(r.get("rankTotalParses"), int) else None
@@ -330,7 +363,7 @@ def _find_count(api, enc_id, cls, spec, bracket, metric, per_page, first_rows, g
 
 
 def benchmark_one(api, enc_id, cls, spec, bracket, old=None, metric="dps", n_hint=None):
-    """#1, top 1%, top 10% and median for one dungeon / spec / key level.
+    """#1 and the DPS at each ANCHORS percentile for one dungeon / class+spec / key level.
     Rankings come sorted best first, so each value is the row at that rank.
     n_hint (number of ranked runs, e.g. from your own run's rankTotalParses) or a
     previous result saves the page probing. Usually 2-3 ranking lookups."""
@@ -393,10 +426,10 @@ def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, prio
                 continue
             for lv in levels:
                 old = ((out.get(map_id) or {}).get(spec_id) or {}).get(lv)
-                if old and old.get("v") != BENCH_VERSION:
+                if old and old.get("v") not in USABLE_VERSIONS:
                     old = None  # made with the old (wrong) key-level numbering
                 age = now - (old or {}).get("u", 0)
-                if old and age < max_age_days * 86400:
+                if old and old.get("v") == BENCH_VERSION and age < max_age_days * 86400:
                     continue
                 pri = 0 if priority and (map_id, spec_id, lv) in priority else 1
                 if only_priority and pri:
@@ -405,7 +438,7 @@ def fetch_benchmarks(api, zone, dungeon_map, spec_labels, levels, existing, prio
     for map_id in list(out):
         for spec_id in list(out[map_id]):
             for lv in list(out[map_id][spec_id]):
-                if out[map_id][spec_id][lv].get("v") != BENCH_VERSION:
+                if out[map_id][spec_id][lv].get("v") not in USABLE_VERSIONS:
                     del out[map_id][spec_id][lv]
     jobs.sort()
     done = 0

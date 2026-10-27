@@ -9,7 +9,7 @@ Two things:
 
 ## What you see in game
 
-Open the main window with the **minimap button**, `/kp`, or from the small Keystone Percentile panel inside Blizzard's **Mythic+ window** (top-left corner; a setting moves it beside the window instead). The window has four tabs:
+Open the main window with the **minimap button**, `/kp`, or from the small Keystone Percentile panel next to Blizzard's **Mythic+ window** (on the right, under Raider.IO's "best runs" panel when you use Raider.IO). The window has four tabs:
 
 - **Overview:** your rating and Top % overall, for your role, class and spec, plus your goals:
   ```
@@ -22,16 +22,16 @@ Open the main window with the **minimap button**, `/kp`, or from the small Keyst
   Top 0.1% season title   +402 rating · ~27 keys
   ```
   Top 1% and Top 0.1% are always shown, plus the next bracket above you (Top 40%, 30%, 25%, 20%, 15%, 10%, 5%, 2%). Click a goal to open its plan in the Goals tab.
-- **Runs:** every key you've done, with result, DPS or HPS, the median DPS for that dungeon and key level (green when you beat it), your Top % against runs at the same key level, and a bar against #1. Filter by season, dungeon and spec, and sort by date, rank or amount. A raid-star marks your best run per dungeon. Click any run to reopen its summary.
-- **Progress:** a graph of your rating over the last 30 days or the whole season, coloured by percentile, with your change this week and this month ("+42 rating · Top 9.4% → Top 8.6%"). Your rating is saved once a day while you play, so the graph starts after two days.
+- **Runs:** every key you've done: key level and result (timed +1/+2/+3 or over time), your DPS or HPS, the median and #1 DPS of your class and spec in that dungeon at that key level with how far above or below you are ("500k +22%"), and your Top %. Filter by season, dungeon and spec, and sort by date, rank or amount. A raid-star marks your best run per dungeon. Click a run to open its page: your DPS, your rank ("#14 of 1,672 at +18"), and the median, your next bracket, Top 1%, Top 0.1% and #1 of your spec, each with its DPS and your difference.
+- **Progress:** a graph of your rating over the whole season (or the last 30 days). Days before you installed the addon are rebuilt from your keys on Warcraft Logs (each logged key carries its rating points; your rating is your best run per dungeon added up). After that, your real rating is saved once a day while you play.
 - **Goals:** a planner for one goal at a time (overall or your spec): the rating needed, about how many keys, and one row per dungeon with how high to time it.
 
 All brackets are exact: besides Raider.IO's official cutoffs (0.1/1/5/10/25/40%), the release data includes brackets calculated from Raider.IO's daily score distribution, checked against the official ones. The number of keys is an estimate, based on how much rating each key level has given you so far.
 
 **End-of-key pop-up:**
 - Your DPS (HPS for healers), and your Top X% among logged runs of your spec at that dungeon and key level.
-- The median and #1 for that dungeon and key level, and how far you are from each.
-- A bar from 0 to the #1 run with the 50/25/10/1% marks, and how much more each goal needs.
+- The median, your next bracket, Top 1%, Top 0.1% and #1 of your class and spec for that dungeon and key level, each with its DPS and how far you are from it.
+- A bar from 0 to the #1 run with those marks.
 - What happened: deaths, share of your damage taken that was avoidable, and interrupts, compared with your own average.
 - Your whole group, each ranked against players of their own spec.
 - Your next rating goal and how many keys are left.

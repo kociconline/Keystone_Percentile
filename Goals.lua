@@ -451,9 +451,9 @@ function ns.RefreshGoalsTab()
 end
 
 ---------------------------------------------------------------------------
--- Panel docked to the right of Blizzard's Mythic+ window
+-- Panel attached to the right of Blizzard's Mythic+ window
 ---------------------------------------------------------------------------
-local dock
+local dock, PlaceDock
 
 local function BuildDock()
   if dock or not ChallengesFrame then return end
@@ -461,7 +461,7 @@ local function BuildDock()
   dock:SetWidth(215)
   dock:SetFrameLevel((ChallengesFrame:GetFrameLevel() or 1) + 20)
   dock:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-  dock:SetBackdropColor(0, 0, 0, 0.72)
+  dock:SetBackdropColor(0.05, 0.05, 0.06, 0.95)
   dock:SetBackdropBorderColor(0, 0, 0, 1)
   dock.icon = dock:CreateTexture(nil, "ARTWORK")
   dock.icon:SetSize(16, 16)
@@ -473,18 +473,44 @@ local function BuildDock()
   dock.rows, dock.goals = {}, {}
   dock.hint = dock:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   dock:SetScript("OnClick", function() ns.ToggleHistory("overview") end)
-  ChallengesFrame:HookScript("OnShow", function() ns.RefreshDock() end)
+  dock:SetClampedToScreen(true)
+  ChallengesFrame:HookScript("OnShow", function()
+    ns.RefreshDock()
+    -- Raider.IO shows its profile a moment after the window opens
+    C_Timer.After(0.1, function() if dock:IsShown() then PlaceDock() end end)
+    C_Timer.After(0.5, function() if dock:IsShown() then PlaceDock() end end)
+  end)
 end
 
--- Inside the empty top-left corner of the Mythic+ window by default (the area
--- to the right of the window is often used by other addons, e.g. Raider.IO);
--- "outside" puts it to the right of the window instead.
-local function PlaceDock()
+-- Under Raider.IO's profile ("Best runs by dungeon") when it's showing next to
+-- the Mythic+ window, using the same width; otherwise straight to the right of
+-- the window. Nothing of ours sits on top of Blizzard's window.
+local hookedRIO
+local function RaiderIOPanel()
+  local tip = _G.RaiderIO_ProfileTooltip
+  if not (tip and tip.IsShown and tip:IsShown()) then return nil, tip end
+  local pve = PVEFrame or ChallengesFrame
+  local tl, pr = tip:GetLeft(), pve and pve:GetRight()
+  -- Only when it's attached to the Mythic+ window, not moved somewhere else
+  if tl and pr and math.abs(tl - pr) > 60 then return nil, tip end
+  return tip, tip
+end
+
+function PlaceDock()
   dock:ClearAllPoints()
-  if KP_DB.dockOutside then
-    dock:SetPoint("TOPLEFT", PVEFrame or ChallengesFrame, "TOPRIGHT", 2, -2)
+  local rio, tip = RaiderIOPanel()
+  if tip and not hookedRIO then
+    hookedRIO = true
+    tip:HookScript("OnShow", function() C_Timer.After(0, function() if dock and dock:IsShown() then PlaceDock() end end) end)
+    tip:HookScript("OnHide", function() if dock and dock:IsShown() then PlaceDock() end end)
+    tip:HookScript("OnSizeChanged", function() if dock and dock:IsShown() and RaiderIOPanel() then dock:SetWidth(math.max(215, tip:GetWidth() or 0)) end end)
+  end
+  if rio then
+    dock:SetPoint("TOPLEFT", rio, "BOTTOMLEFT", 0, -2)
+    dock:SetWidth(math.max(215, rio:GetWidth() or 0))
   else
-    dock:SetPoint("TOPLEFT", ChallengesFrame, "TOPLEFT", 8, -30)
+    dock:SetPoint("TOPLEFT", PVEFrame or ChallengesFrame, "TOPRIGHT", 2, -2)
+    dock:SetWidth(215)
   end
 end
 
