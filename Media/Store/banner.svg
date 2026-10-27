@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+<defs>
+  <radialGradient id="page" cx="30%" cy="45%" r="80%"><stop offset="0" stop-color="#22163a"/><stop offset="1" stop-color="#08060e"/></radialGradient>
+</defs>
+<rect width="1280" height="640" fill="url(#page)"/>
+<image href="icon_full.svg" x="110" y="150" width="340" height="340"/>
+<text x="520" y="290" font-family="DejaVu Serif" font-weight="bold" font-size="76" fill="#ffd100">Keystone</text>
+<text x="520" y="378" font-family="DejaVu Serif" font-weight="bold" font-size="76" fill="#ffffff">Percentile</text>
+<text x="522" y="446" font-family="DejaVu Sans" font-size="27" fill="#b9b3c8">Your Mythic+ Top % and the keys to your next goal</text>
+<g font-family="DejaVu Sans" font-size="24" font-weight="bold">
+  <text x="522" y="510" fill="#1eff00">Top 25%</text><text x="652" y="510" fill="#3d9bff">Top 10%</text>
+  <text x="782" y="510" fill="#c06cff">Top 5%</text><text x="898" y="510" fill="#ff8000">Top 1%</text>
+</g>
+</svg>

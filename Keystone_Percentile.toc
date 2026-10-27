@@ -4,7 +4,7 @@
 ## Author: kociconline
 ## Version: @project-version@
 ## SavedVariables: KP_DB, KP_RUNS
-## IconTexture: Interface\Icons\Achievement_ChallengeMode_Gold
+## IconTexture: Interface\AddOns\Keystone_Percentile\Media\Icon
 ## AddonCompartmentFunc: KeystonePercentile_OnCompartmentClick
 ## AddonCompartmentFuncOnEnter: KeystonePercentile_OnCompartmentEnter
 ## AddonCompartmentFuncOnLeave: KeystonePercentile_OnCompartmentLeave

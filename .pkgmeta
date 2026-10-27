@@ -6,6 +6,7 @@ ignore:
   - .github
   - README.md
   - CURSEFORGE.md
+  - Media/Store
   - tools/characters.json
   - tools/wcl_key.json
   - tools/cache

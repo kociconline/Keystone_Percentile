@@ -1,3 +1,5 @@
+<p align="center"><img src="Media/Store/logo.png" width="160" alt="Keystone Percentile logo"></p>
+
 # Keystone Percentile
 
 Two things:

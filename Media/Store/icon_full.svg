@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+<defs>
+  <radialGradient id="bg" cx="50%" cy="38%" r="65%"><stop offset="0" stop-color="#2a1a44"/><stop offset="1" stop-color="#0c0814"/></radialGradient>
+  <linearGradient id="ring" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4d27a"/><stop offset="0.5" stop-color="#c9a227"/><stop offset="1" stop-color="#7a5a12"/></linearGradient>
+</defs>
+<circle cx="50" cy="50" r="47" fill="url(#bg)"/>
+<circle cx="50" cy="50" r="38" fill="none" stroke="#6a44a0" stroke-opacity="0.7" stroke-width="2.5"/>
+<g stroke-linecap="round" stroke-linejoin="round" fill="none">
+  <g stroke="#0a0612" stroke-width="12">
+    <path d="M28 76 L50 62 L72 76"/><path d="M28 61 L50 47 L72 61"/><path d="M28 46 L50 32 L72 46"/><path d="M36 27 L50 18 L64 27"/>
+  </g>
+  <path d="M28 76 L50 62 L72 76" stroke="#1eff00" stroke-width="7.5"/>
+  <path d="M28 61 L50 47 L72 61" stroke="#3d9bff" stroke-width="7.5"/>
+  <path d="M28 46 L50 32 L72 46" stroke="#c06cff" stroke-width="7.5"/>
+  <path d="M36 27 L50 18 L64 27" stroke="#ff8000" stroke-width="7.5"/>
+  <g stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.6">
+    <path d="M30 74.5 L50 61.5"/><path d="M30 59.5 L50 46.5"/><path d="M30 44.5 L50 31.5"/><path d="M38 25.6 L50 17.6"/>
+  </g>
+</g>
+<circle cx="50" cy="50" r="47" fill="none" stroke="url(#ring)" stroke-width="4.5"/>
+</svg>

@@ -3,7 +3,7 @@
 local ADDON, ns = ...
 local L = ns.L
 
-local W, ROW_H, VISIBLE = 640, 22, 14
+local W, ROW_H, VISIBLE = 660, 22, 14
 local COLS = { -- x offset, width, justify
   date = { 10, 52, "LEFT" }, dungeon = { 66, 190, "LEFT" }, result = { 260, 54, "LEFT" },
   dps = { 316, 66, "RIGHT" }, rank = { 392, 84, "LEFT" }, bar = { 480, 96 },
@@ -33,8 +33,12 @@ tinsert(UISpecialFrames, "KeystonePercentileHistory")
 local close = CreateFrame("Button", nil, win, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
 
+win.icon = win:CreateTexture(nil, "ARTWORK")
+win.icon:SetSize(22, 22)
+win.icon:SetPoint("TOPLEFT", 10, -8)
+win.icon:SetTexture("Interface\\AddOns\\Keystone_Percentile\\Media\\Icon")
 win.title = win:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-win.title:SetPoint("TOPLEFT", 12, -12)
+win.title:SetPoint("TOPLEFT", 36, -12)
 win.title:SetText("Keystone Percentile")
 
 -- Each tab is a view frame filling the window; only one is shown.
@@ -44,7 +48,7 @@ local function LayoutTabs()
   table.sort(tabs, function(a, b) return a.order < b.order end)
   for i, b in ipairs(tabs) do
     b:ClearAllPoints()
-    b:SetPoint("TOPLEFT", 205 + (i - 1) * 88, -10)
+    b:SetPoint("TOPLEFT", 225 + (i - 1) * 88, -10)
   end
 end
 
