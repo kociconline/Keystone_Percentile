@@ -7,30 +7,36 @@ Two things:
 
 ## What you see in game
 
-**Rating panel** (always on screen, drag to move, click for run history):
+Open the main window with the **minimap button**, `/kp`, or by opening Blizzard's **Mythic+ window**, which gets a Keystone Percentile panel docked to its right side. The window has four tabs:
 
-```
-3,300  M+ rating, EU
-Overall             Top 8.6%   ~#60,384 / 700,211
-Healer              Top 7.9%   ~#13,415 / 169,016
-Paladin             Top 8.2%   ~#5,775 / 70,000
-Holy                Top 7.3%   ~#1,838 / 25,000
-Herald of the Sun   —          no ranking data
-```
+- **Overview:** your rating and Top % overall, for your role, class and spec, plus your goals:
+  ```
+  3,634  M+ rating, EU
+  Overall     Top 3.1%   ~#30,841 / 984,581
+  ...
+  Goals
+  Top 2%   next step      +70 rating · ~5 keys
+  Top 1%                  +173 rating · ~12 keys
+  Top 0.1% season title   +402 rating · ~27 keys
+  ```
+  Top 1% and Top 0.1% are always shown, plus the next bracket above you (Top 40%, 30%, 25%, 20%, 15%, 10%, 5%, 2%). Click "Which keys" under a goal to see the keys to time, easiest first.
+- **Runs:** every key you've done, with result, DPS or HPS, rank and a bar against #1. Filter by season, dungeon and spec, and sort by date, rank or amount. A raid-star marks your best run per dungeon. Click any run to reopen its summary.
+- **Progress:** a graph of your rating over the last 30 days or the whole season, coloured by percentile, with your change this week and this month ("+42 rating · Top 9.4% → Top 8.6%"). Your rating is saved once a day while you play, so the graph starts after two days.
+- **Goals:** every goal with its full list of keys, for overall or for your spec.
+
+All brackets are exact: besides Raider.IO's official cutoffs (0.1/1/5/10/25/40%), the release data includes brackets calculated from Raider.IO's daily score distribution, checked against the official ones. The number of keys is an estimate, based on how much rating each key level has given you so far.
 
 **End-of-key pop-up:**
 - Your DPS (HPS for healers), and your Top X% among logged runs of your spec at that dungeon and level.
 - A bar from 0 to the #1 run with the 50/25/10/1% marks, and how much more each goal needs.
 - What happened: deaths, share of your damage taken that was avoidable, and interrupts, compared with your own average.
 - Your whole group, each ranked against players of their own spec.
+- Your next rating goal and how many keys are left.
 - A Share button: click posts to group chat, shift-click to guild chat.
 
-**History window** (click the panel, or `/kp runs`), with three tabs:
-- **Runs:** every key you've done, with result, DPS or HPS, rank and a bar against #1. Filter by season, dungeon and spec, and sort by date, rank or amount. A star marks your best run per dungeon. Click any run to reopen its summary.
-- **Progress:** a graph of your rating over the last 30 days or the whole season, coloured by percentile, with your change this week and this month ("+42 rating · Top 9.4% → Top 8.6%"). Your rating is saved once a day while you play, so the graph starts after two days.
-- **Next keys:** for every dungeon, the key level to run next, about how much rating timing it would give, and your new Top % overall and for your spec. Estimates are fitted from your own dungeon scores.
+**Floating panel** (optional, off by default): a small always-on panel with your Top % and next goal. Turn it on in the settings or with `/kp panel`, drag to move, drag the corner to resize.
 
-**Settings** are under Options > AddOns > Keystone Percentile, or right-click the addon's icon in the addon dropdown by the minimap.
+**Settings** are under Options > AddOns > Keystone Percentile, or right-click the minimap button.
 
 Ranks marked `~` are estimates from benchmarks. Ranks without `~` are official Warcraft Logs ranks for uploaded runs.
 
@@ -40,7 +46,7 @@ Addons can't go online, so `tools/update_data.py` downloads the data and writes 
 
 | Data | Source | Needs |
 |---|---|---|
-| Rating cutoffs per region, role, class, spec | Raider.IO | nothing |
+| Rating cutoffs and score distributions per region, role, class, spec | Raider.IO | nothing |
 | Your exact Raider.IO ranks | Raider.IO | `tools/characters.json` |
 | DPS (HPS for healers) benchmarks per dungeon, spec, key level | Warcraft Logs | API key |
 | Your past runs, with official ranks | Warcraft Logs | API key + `tools/characters.json` |
@@ -79,16 +85,17 @@ Rerun after uploading new logs. With `--all-seasons`, past seasons are fetched o
 
 | Command | Effect |
 |---|---|
-| `/kp` | Print the rating rows in chat |
-| `/kp runs` | Open or close the run history |
+| `/kp` | Open or close the window (Overview) |
+| `/kp runs` | Open the run history |
 | `/kp progress` | Open the rating graph |
-| `/kp next` | Open the next-key suggestions |
-| `/kp config` | Open the settings |
+| `/kp goals` | Open the goals with their keys |
 | `/kp last` | Reopen the last run's summary |
+| `/kp config` | Open the settings |
+| `/kp panel` | Turn the floating panel on or off |
+| `/kp minimap` | Show or hide the minimap button |
 | `/kp popup` | Turn the end-of-key pop-up on or off |
-| `/kp hide` / `show` | Toggle the rating panel |
-| `/kp lock` | Lock or unlock dragging |
-| `/kp reset` | Reset the panel position |
+| `/kp lock` | Lock or unlock the floating panel |
+| `/kp reset` | Reset the floating panel's position and size |
 | `/kp tooltips` | Toggle "Top X%" on player tooltips |
 | `/kp region eu` | Force a region (`auto` to undo) |
 

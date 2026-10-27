@@ -1,4 +1,5 @@
--- Keystone Percentile: run history window (/kp runs, or click the rating panel).
+-- Keystone Percentile: main window (/kp, minimap button or the Mythic+ window).
+-- Tabs: Overview, Runs, Progress, Goals.
 local ADDON, ns = ...
 local L = ns.L
 
@@ -38,7 +39,16 @@ win.title:SetText("Keystone Percentile")
 
 -- Each tab is a view frame filling the window; only one is shown.
 local tabs, views = {}, {}
-local function NewView(key, label, refresh)
+
+local function LayoutTabs()
+  table.sort(tabs, function(a, b) return a.order < b.order end)
+  for i, b in ipairs(tabs) do
+    b:ClearAllPoints()
+    b:SetPoint("TOPLEFT", 205 + (i - 1) * 88, -10)
+  end
+end
+
+local function NewView(key, label, refresh, order)
   local v = CreateFrame("Frame", nil, win)
   v:SetPoint("TOPLEFT", 0, -34); v:SetPoint("BOTTOMRIGHT")
   v:Hide()
@@ -46,18 +56,20 @@ local function NewView(key, label, refresh)
   views[key] = v
   local b = CreateFrame("Button", nil, win, "BackdropTemplate")
   b:SetSize(84, 20)
-  b:SetPoint("TOPLEFT", 205 + (#tabs) * 88, -10)
+  b.order = order or (#tabs + 1) * 10
   b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
   b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   b.text:SetPoint("CENTER"); b.text:SetText(label)
   b.key = key
   b:SetScript("OnClick", function() ns.ShowHistoryTab(key) end)
   tabs[#tabs + 1] = b
+  LayoutTabs()
   return v
 end
 ns.NewHistoryView = NewView
 
 function ns.ShowHistoryTab(key)
+  if not views[key] then key = "overview" end
   KP_DB.historyTab = key
   for k, v in pairs(views) do
     if k == key then v:Show(); if v.refresh then v.refresh() end else v:Hide() end
@@ -70,7 +82,7 @@ function ns.ShowHistoryTab(key)
 end
 
 local Refresh -- defined below
-local runsView = NewView("runs", L["Runs"], function() Refresh() end)
+local runsView = NewView("runs", L["Runs"], function() Refresh() end, 20)
 ns.HistoryWindow = win
 
 win.count = runsView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -312,7 +324,7 @@ end)
 function ns.ToggleHistory(tab)
   if win:IsShown() and (not tab or tab == KP_DB.historyTab) then win:Hide() return end
   win:Show()
-  ns.ShowHistoryTab(tab or KP_DB.historyTab or "runs")
+  ns.ShowHistoryTab(tab or KP_DB.historyTab or "overview")
 end
 
 -- Keep the window current when a key finishes while it's open.
@@ -320,6 +332,6 @@ local ev = CreateFrame("Frame")
 ev:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 ev:SetScript("OnEvent", function()
   C_Timer.After(5, function()
-    if win:IsShown() then ns.ShowHistoryTab(KP_DB.historyTab or "runs") end
+    if win:IsShown() then ns.ShowHistoryTab(KP_DB.historyTab or "overview") end
   end)
 end)

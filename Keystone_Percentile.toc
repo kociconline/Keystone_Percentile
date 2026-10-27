@@ -1,6 +1,6 @@
 ## Interface: 120100, 120105
 ## Title: Keystone Percentile
-## Notes: Mythic+ "Top X%" for your rating (overall, role, class, spec) and your DPS in every key.
+## Notes: Mythic+ "Top X%" for your rating, how many keys to your next goal, and your DPS in every key.
 ## Author: kociconline
 ## Version: @project-version@
 ## SavedVariables: KP_DB, KP_RUNS
@@ -16,4 +16,6 @@ Core.lua
 Runs.lua
 History.lua
 Progress.lua
+Goals.lua
 Settings.lua
+Minimap.lua

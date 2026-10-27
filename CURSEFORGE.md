@@ -14,7 +14,7 @@ Holy       Top 7.3%   ~#1,838 / 25,000
 
 - Top % overall, by role, by class and by spec, for your region
 - Your approximate ladder position in each group
-- Hover to see how many points you need for the next bracket
+- Your next bracket, Top 1% and Top 0.1%: rating needed and about how many keys
 - Updates instantly after every key and when you change spec
 
 ## DPS in every key
@@ -31,11 +31,12 @@ Holy       Top 7.3%   ~#1,838 / 25,000
 ## Progress and goals
 
 - **Rating graph:** your rating over the last 30 days or the whole season, with "this week: +42 rating · Top 9.4% → Top 8.6%"
-- **Next keys:** which dungeon to push next, about how much rating it gives, and your new Top % if you time it
+- **Goals:** how much rating and about how many keys to your next bracket, Top 1% and Top 0.1%, with the exact keys to time when you want them
+- **Exact brackets:** calculated from Raider.IO's full score distribution, not guessed
 
 ## Commands
 
-`/kp runs`, `/kp progress` and `/kp next` open the history window's tabs, `/kp last` reopens the last summary, and `/kp config` opens the settings. Settings are also under Options > AddOns, and in the addon dropdown by the minimap.
+Open everything from the minimap button, `/kp`, or Blizzard's Mythic+ window, which gets a Keystone Percentile panel on its side. `/kp goals`, `/kp runs` and `/kp progress` open those tabs, `/kp last` reopens the last summary, and `/kp config` opens the settings. An optional floating panel can be turned on with `/kp panel`.
 
 Available in English, Deutsch, Français and Русский.
 

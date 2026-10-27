@@ -1,5 +1,4 @@
--- Keystone Percentile: rating history graph ("Progress" tab) and next-key
--- suggestions ("Next keys" tab).
+-- Keystone Percentile: rating history graph ("Progress" tab).
 local ADDON, ns = ...
 local L = ns.L
 
@@ -53,7 +52,7 @@ end
 local GW, GH = 540, 200
 local range = 30 -- days; 0 = whole season
 
-local view = ns.NewHistoryView("progress", L["Progress"], function() ns.RefreshProgress() end)
+local view = ns.NewHistoryView("progress", L["Progress"], function() ns.RefreshProgress() end, 30)
 ns.ProgressView = view
 
 view.today = view:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -224,140 +223,14 @@ function ns.RefreshProgress()
 end
 
 ---------------------------------------------------------------------------
--- Next keys: which dungeon to push for the most rating
----------------------------------------------------------------------------
-local nextView = ns.NewHistoryView("next", L["Next keys"], function() ns.RefreshNextKeys() end)
-ns.NextKeysView, ns.NextKeysRows = nextView, nil
-
-nextView.intro = nextView:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-nextView.intro:SetPoint("TOPLEFT", 14, -6)
-nextView.intro:SetWidth(560); nextView.intro:SetJustifyH("LEFT")
-
-local NCOLS = { { 14, 170, "LEFT" }, { 188, 90, "LEFT" }, { 282, 70, "LEFT" }, { 356, 70, "RIGHT" }, { 436, 140, "LEFT" } }
-local nheaders = { L["Dungeon"], L["Your best"], L["Next"], L["Rating"], L["New rank"] }
-for i, h in ipairs(nheaders) do
-  local fs = nextView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  fs:SetPoint("TOPLEFT", NCOLS[i][1], -40); fs:SetWidth(NCOLS[i][2]); fs:SetJustifyH(NCOLS[i][3])
-  fs:SetText(h)
-end
-nextView.note = nextView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-nextView.note:SetPoint("BOTTOMLEFT", 12, 10)
-nextView.note:SetWidth(570); nextView.note:SetJustifyH("LEFT")
-
-local nrows = {}
-ns.NextKeysRows = nrows
-local function NRow(i)
-  if not nrows[i] then
-    local r = {}
-    for c = 1, #NCOLS do
-      local fs = nextView:CreateFontString(nil, "OVERLAY", c == 1 and "GameFontHighlight" or "GameFontHighlightSmall")
-      fs:SetWidth(NCOLS[c][2]); fs:SetJustifyH(NCOLS[c][3]); fs:SetWordWrap(false)
-      r[c] = fs
-    end
-    nrows[i] = r
-  end
-  return nrows[i]
-end
-
--- Rating per key level, fitted from your own timed dungeons.
-local function FitScores(runs)
-  local xs, ys = {}, {}
-  for _, r in ipairs(runs) do
-    if r.finishedSuccess and (r.bestRunLevel or 0) > 0 and (r.mapScore or 0) > 0 then
-      xs[#xs + 1], ys[#ys + 1] = r.bestRunLevel, r.mapScore
-    end
-  end
-  local n = #xs
-  local slope, intercept = 15, nil
-  if n >= 2 then
-    local mx, my = 0, 0
-    for i = 1, n do mx, my = mx + xs[i], my + ys[i] end
-    mx, my = mx / n, my / n
-    local sxy, sxx = 0, 0
-    for i = 1, n do sxy, sxx = sxy + (xs[i] - mx) * (ys[i] - my), sxx + (xs[i] - mx) ^ 2 end
-    if sxx > 0 then slope = math.max(6, math.min(30, sxy / sxx)) end
-    intercept = my - slope * mx
-  elseif n == 1 then
-    intercept = ys[1] - slope * xs[1]
-  end
-  return slope, intercept, n
-end
-
-function ns.RefreshNextKeys()
-  local ok, summary = pcall(C_PlayerInfo.GetPlayerMythicPlusRatingSummary, "player")
-  local score = ns.GetScore("player")
-  for _, r in pairs(nrows) do for c = 1, #NCOLS do r[c]:Hide() end end
-  if not ok or not summary or not score then
-    nextView.intro:SetText(L["Your Mythic+ rating isn't available yet. Try again in a moment."])
-    return
-  end
-
-  local runs = summary.runs or {}
-  local byMap = {}
-  for _, r in ipairs(runs) do if r.challengeModeID then byMap[r.challengeModeID] = r end end
-  local maps = (C_ChallengeMode.GetMapTable and C_ChallengeMode.GetMapTable()) or {}
-  local slope, intercept, fitted = FitScores(runs)
-
-  local lowestTimed
-  for _, r in ipairs(runs) do
-    if r.finishedSuccess and r.bestRunLevel and (not lowestTimed or r.bestRunLevel < lowestTimed) then
-      lowestTimed = r.bestRunLevel
-    end
-  end
-
-  local list = {}
-  for _, map in ipairs(maps) do
-    local r = byMap[map]
-    local cur = r and r.mapScore or 0
-    local best = r and r.bestRunLevel or 0
-    local target
-    if r and best > 0 then
-      target = r.finishedSuccess and best + 1 or best
-    else
-      target = lowestTimed or 2
-    end
-    local predicted = intercept and (intercept + slope * target) or (cur + slope)
-    local gain = math.max(0, math.floor(predicted - cur + 0.5))
-    if r and r.finishedSuccess and gain < slope * 0.5 then gain = math.floor(slope + 0.5) end
-    list[#list + 1] = { map = map, best = best, timed = r and r.finishedSuccess, cur = cur, target = target, gain = gain }
-  end
-  table.sort(list, function(a, b) return a.gain > b.gain end)
-
-  local region, id = ns.GetRegion(), ns.GetPlayerIdentity()
-  local nowOverall = ns.EvaluateCohort(region, "overall", "overall", score, nil)
-  nextView.intro:SetText(string.format(L["Your rating: %s. Timing each dungeon one level higher would give about:"],
-    "|c" .. ns.PctColor(nowOverall and nowOverall.pct or 100) .. ns.Num(score) .. "|r"))
-
-  for i, e in ipairs(list) do
-    local row = NRow(i)
-    local y = -56 - (i - 1) * 20
-    for c = 1, #NCOLS do row[c]:ClearAllPoints(); row[c]:SetPoint("TOPLEFT", nextView, "TOPLEFT", NCOLS[c][1], y); row[c]:Show() end
-    local name = C_ChallengeMode.GetMapUIInfo(e.map) or ("#" .. e.map)
-    row[1]:SetText(name)
-    if e.best > 0 then
-      row[2]:SetText(string.format("%s+%d|r |cff888888%d|r", e.timed and "|cff1eff00" or "|cffff5555", e.best, math.floor(e.cur + 0.5)))
-    else
-      row[2]:SetText("|cff777777" .. L["not run"] .. "|r")
-    end
-    row[3]:SetText("+" .. e.target)
-    row[4]:SetText(string.format("|cffffd100+%d|r", e.gain))
-    local newScore = score + e.gain
-    local o = ns.EvaluateCohort(region, "overall", "overall", newScore, nil)
-    local s = id.specID and ns.EvaluateCohort(region, "spec:" .. id.specID, "spec_" .. id.specID, newScore, nil)
-    local text = o and string.format("|c%s%s|r", ns.PctColor(o.pct), string.format(L["Top %s"], ns.FormatPct(o.pct))) or "—"
-    if s then text = text .. string.format(" |cff888888·|r |c%s%s|r", ns.PctColor(s.pct), ns.FormatPct(s.pct)) end
-    row[5]:SetText(text)
-  end
-
-  nextView.note:SetText(fitted >= 2
-    and string.format(L["Estimates use your own dungeon scores (about %d rating per key level). New rank: overall · your spec."], math.floor(slope + 0.5))
-    or L["Estimates assume about 15 rating per key level until you've timed more dungeons. New rank: overall · your spec."])
-end
-
----------------------------------------------------------------------------
 -- When to take snapshots
 ---------------------------------------------------------------------------
-ns.OnRunRecorded = function() C_Timer.After(5, ns.RecordSnapshot) end
+ns.OnRunRecorded = function()
+  C_Timer.After(5, function()
+    ns.RecordSnapshot()
+    if ns.RefreshAll then ns.RefreshAll() end
+  end)
+end
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:SetScript("OnEvent", function(_, _, isLogin)

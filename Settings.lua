@@ -42,10 +42,16 @@ local function Check(label, tip, get, set)
   y = y - 30
 end
 
-Check(L["Show rating panel"], L["The small panel with your Top % for overall, role, class and spec."],
-  function() return not KP_DB.hidden end,
-  function(v) KP_DB.hidden = not v; ns.RefreshPanel() end)
-Check(L["Lock panel position"], L["Stops the panel from being dragged."],
+Check(L["Show next to the Mythic+ window"], L["Your Top % and goals beside Blizzard's Mythic+ window whenever you open it."],
+  function() return KP_DB.dock ~= false end,
+  function(v) KP_DB.dock = v; if ns.RefreshDock then ns.RefreshDock() end end)
+Check(L["Show minimap button"], L["Left-click opens the window, right-click opens these settings."],
+  function() return not (KP_DB.minimap and KP_DB.minimap.hide) end,
+  function(v) KP_DB.minimap = KP_DB.minimap or {}; KP_DB.minimap.hide = not v; ns.RefreshMinimap() end)
+Check(L["Show floating panel"], L["A small always-on panel with your Top % and next goal. Drag the corner to resize."],
+  function() return KP_DB.floating end,
+  function(v) KP_DB.floating = v; ns.RefreshPanel() end)
+Check(L["Lock floating panel"], L["Stops the floating panel from being moved or resized."],
   function() return KP_DB.locked end,
   function(v) KP_DB.locked = v end)
 Check(L["Show end-of-key pop-up"], L["Your DPS or HPS rank, the gap to the top, and what happened in the key."],
@@ -80,8 +86,8 @@ y = y - 44
 local historyBtn = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
 historyBtn:SetSize(150, 22)
 historyBtn:SetPoint("TOPLEFT", 16, y)
-historyBtn:SetText(L["Open run history"])
-historyBtn:SetScript("OnClick", function() ns.ToggleHistory("runs") end)
+historyBtn:SetText(L["Open window"])
+historyBtn:SetScript("OnClick", function() ns.ToggleHistory("overview") end)
 local resetBtn = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
 resetBtn:SetSize(150, 22)
 resetBtn:SetPoint("LEFT", historyBtn, "RIGHT", 8, 0)
@@ -97,12 +103,20 @@ page:SetScript("OnShow", function()
   for _, cb in ipairs(checks) do cb:SetChecked(cb.get() and true or false) end
   regionBtn:SetText(RegionText())
   local nb = 0
+  local seen = {}
   for _, src in ipairs({ KP_DATA, KP_PERSONAL or {} }) do
-    for _, sp in pairs(src.dps or {}) do for _, lv in pairs(sp) do for _ in pairs(lv) do nb = nb + 1 end end end
+    for m, sp in pairs(src.dps or {}) do
+      for s, lv in pairs(sp) do
+        for l in pairs(lv) do
+          local k = m .. ":" .. s .. ":" .. l
+          if not seen[k] then seen[k] = true; nb = nb + 1 end
+        end
+      end
+    end
   end
   local imported = 0
   for _, list in pairs((KP_PERSONAL and KP_PERSONAL.imported) or KP_DATA.imported or {}) do imported = imported + #list end
-  info:SetText(string.format(L["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /kp, /kp runs, /kp progress, /kp next, /kp last"],
+  info:SetText(string.format(L["Data: %s · updated %s\n%d Warcraft Logs benchmarks · %d imported runs\nCommands: /kp, /kp runs, /kp progress, /kp goals, /kp last"],
     KP_DATA.season or "?", KP_DATA.updatedAt or L["never"], nb, imported))
 end)
 

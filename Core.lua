@@ -91,9 +91,9 @@ ns.GetPlayerIdentity = GetPlayerIdentity
 
 ---------------------------------------------------------------------------
 -- Percentile maths
--- Each group has anchor points (top 0.1/1/5/10/25/40%). Between two anchors
--- we interpolate on a log scale of the percentage, which follows the shape
--- of the ladder far better than a straight line.
+-- Each group has anchor points: Raider.IO's official brackets plus extra
+-- brackets calculated from its daily score distribution (exact). Between two
+-- anchors we interpolate on a log scale of the percentage.
 ---------------------------------------------------------------------------
 local function Cohort(region, key)
   local r = KP_DATA and KP_DATA.regions and KP_DATA.regions[region]
@@ -115,6 +115,26 @@ local function EstimatePct(score, cutoffs)
   local last = c[#c]
   if score <= 0 or last.score <= 0 then return 100 end
   return last.pct + (100 - last.pct) * (1 - score / last.score)
+end
+
+-- Rating needed to be in the top `pct` percent (exact when that bracket is
+-- one of the anchors, interpolated otherwise).
+local function CutoffScore(cutoffs, pct)
+  local c = cutoffs
+  if not c or #c == 0 then return nil end
+  for i = 1, #c do
+    if math.abs(c[i].pct - pct) < 1e-6 then return c[i].score end
+  end
+  if pct < c[1].pct then return nil end -- better than the best anchor: unknown
+  for i = 1, #c - 1 do
+    local hi, lo = c[i], c[i + 1]
+    if pct > hi.pct and pct < lo.pct then
+      local t = (math.log(pct) - math.log(lo.pct)) / (math.log(hi.pct) - math.log(lo.pct))
+      return lo.score + t * (hi.score - lo.score)
+    end
+  end
+  local last = c[#c]
+  return last.score * (1 - (pct - last.pct) / (100 - last.pct))
 end
 
 local function NextGoal(score, cutoffs)
@@ -151,6 +171,7 @@ local function ExactChar(name, realm, score)
 end
 
 ns.EvaluateCohort, ns.ExactChar, ns.GetRegion, ns.GetScore = Evaluate, ExactChar, GetRegion, GetScore
+ns.Cohort, ns.EstimatePct, ns.CutoffScore, ns.ScoreColor = Cohort, EstimatePct, CutoffScore, ScoreColor
 
 -- Rows shown for the player: { label, result } (result may be nil)
 local function BuildRows(score)
@@ -175,6 +196,8 @@ local function BuildRows(score)
   return rows, region
 end
 
+ns.BuildRows = BuildRows
+
 local function PctText(res)
   if not res then return "|cff777777—|r" end
   local s = string.format(L["Top %s"], FormatPct(res.pct) .. (res.capped and "+" or ""))
@@ -192,8 +215,11 @@ local function RankText(res, fallback)
   return string.format("|cff999999~#%s / %s|r", Num(res.rank), Num(res.pop))
 end
 
+ns.PctText, ns.RankText = PctText, RankText
+
 ---------------------------------------------------------------------------
--- On-screen panel
+-- Optional floating panel (off by default; Settings or /kp panel).
+-- Click to open the window, drag to move, drag the corner to resize.
 ---------------------------------------------------------------------------
 local panel = CreateFrame("Frame", "KeystonePercentilePanel", UIParent, "BackdropTemplate")
 panel:SetSize(240, 100)
@@ -239,36 +265,42 @@ panel:SetScript("OnDragStop", function(self)
   KP_DB.pos = { p, rp, x, y }
 end)
 
-local lastRows
-panel:SetScript("OnEnter", function(self)
-  GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-  GameTooltip:AddLine("Keystone Percentile: " .. (GetRegion() or "?"):upper())
-  if KP_DATA.season then GameTooltip:AddLine(KP_DATA.season, 0.7, 0.7, 0.7) end
-  GameTooltip:AddLine(" ")
-  GameTooltip:AddLine(L["Next goal per group"], 1, 0.82, 0)
-  for _, row in ipairs(lastRows or {}) do
-    local res = row[2]
-    if res and res.goalPct then
-      GameTooltip:AddDoubleLine(row[1], string.format(L["+%d to Top %s"], res.need, FormatPct(res.goalPct)),
-        1, 1, 1, 1, 0.82, 0)
-    elseif res then
-      GameTooltip:AddDoubleLine(row[1], L["above every cutoff"], 1, 1, 1, 0, 1, 0.6)
-    end
-  end
-  GameTooltip:AddLine(" ")
-  GameTooltip:AddLine(L["|cff00ff96#rank|r = exact from Raider.IO, ~#rank = estimate"], 0.6, 0.6, 0.6, true)
-  GameTooltip:AddLine(L["Data:"] .. " " .. (KP_DATA.updatedAt or L["never"]), 0.6, 0.6, 0.6)
-  GameTooltip:AddLine(L["Click for run history. Drag to move."], 0.6, 0.6, 0.6)
-  GameTooltip:Show()
+-- Resize from the bottom-right corner: scales the whole panel, keeping its
+-- top-left corner in place.
+local grip = CreateFrame("Button", nil, panel)
+grip:SetSize(14, 14)
+grip:SetPoint("BOTTOMRIGHT", -1, 1)
+grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+grip:SetScript("OnMouseDown", function()
+  if KP_DB.locked then return end
+  local s0 = panel:GetScale()
+  local left, top = (panel:GetLeft() or 0) * s0, (panel:GetTop() or 0) * s0
+  local x0 = GetCursorPosition()
+  local w0 = panel:GetWidth() * s0
+  grip:SetScript("OnUpdate", function()
+    local x = GetCursorPosition() / UIParent:GetEffectiveScale()
+    local x0s = x0 / UIParent:GetEffectiveScale()
+    local s = math.max(0.6, math.min(2.0, s0 * (1 + (x - x0s) / math.max(w0, 1))))
+    panel:SetScale(s)
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left / s, top / s)
+  end)
 end)
-panel:SetScript("OnLeave", GameTooltip_Hide)
+grip:SetScript("OnMouseUp", function()
+  grip:SetScript("OnUpdate", nil)
+  local s = panel:GetScale()
+  KP_DB.scale = s
+  KP_DB.pos = { "TOPLEFT", "BOTTOMLEFT", panel:GetLeft(), panel:GetTop() }
+end)
 
 local function RefreshPanel()
-  if not KP_DB or KP_DB.hidden then panel:Hide() return end
+  if ns.RefreshDock then ns.RefreshDock() end
+  if not KP_DB or not KP_DB.floating then panel:Hide() return end
   local score = GetScore("player")
   if not score then return end
   local rows, region = BuildRows(score)
-  lastRows = rows
 
   panel.header:SetText(string.format("|c%s%s|r  |cff999999%s, %s|r",
     ScoreColor(score), Num(score), L["M+ rating"], (region or "?"):upper()))
@@ -294,10 +326,13 @@ local function RefreshPanel()
   end
 
   local footer
+  local goal = ns.GoalLine and ns.GoalLine()
   if not rows[1][2] then
     footer = "|cffff5555" .. string.format(L["No ladder data for %s yet."], (region or "?"):upper()) .. "|r"
   elseif (KP_DATA.updatedEpoch or 0) > 0 and GetServerTime() - KP_DATA.updatedEpoch > STALE_SECONDS then
     footer = "|cffff5555" .. L["Data is over 7 days old."] .. "|r"
+  elseif goal then
+    footer = goal
   end
   local height = 8 + panel.header:GetStringHeight() + 6 + #rows * ROW_H
   if footer then
@@ -311,7 +346,7 @@ local function RefreshPanel()
 
   local width = math.max(PAD + w1 + 12 + w2 + 12 + w3 + PAD, panel.header:GetStringWidth() + 2 * PAD,
     footer and (panel.footer:GetStringWidth() + 2 * PAD) or 0)
-  panel:SetSize(width, height + 8)
+  panel:SetSize(width + 6, height + 10)
   panel:Show()
 end
 
@@ -355,6 +390,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     if arg1 ~= ADDON then return end
     KP_DB = KP_DB or {}
     if KP_DB.tooltips == nil then KP_DB.tooltips = true end
+    if KP_DB.scale then panel:SetScale(KP_DB.scale) end
     local pos = KP_DB.pos
     panel:ClearAllPoints()
     if pos then panel:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
@@ -378,42 +414,44 @@ SlashCmdList.KEYSTONEPERCENTILE = function(msg)
   msg = (msg or ""):lower():match("^%s*(.-)%s*$")
   local cmd, arg = msg:match("^(%S*)%s*(.*)$")
   local tag = "|cff00ff96Keystone Percentile|r: "
-  if cmd == "hide" or cmd == "show" then
-    KP_DB.hidden = (cmd == "hide")
+  if cmd == "" or cmd == "overview" then
+    ns.ToggleHistory("overview")
+  elseif cmd == "runs" or cmd == "history" then
+    ns.ToggleHistory("runs")
+  elseif cmd == "progress" then
+    ns.ToggleHistory("progress")
+  elseif cmd == "goals" or cmd == "next" then
+    ns.ToggleHistory("goals")
+  elseif cmd == "last" then
+    ns.ShowLastRun()
+  elseif cmd == "config" or cmd == "options" or cmd == "settings" then
+    ns.OpenSettings()
+  elseif cmd == "panel" or cmd == "show" or cmd == "hide" then
+    if cmd == "panel" then KP_DB.floating = not KP_DB.floating else KP_DB.floating = (cmd == "show") end
+    print(tag .. L["floating panel"] .. " " .. (KP_DB.floating and L["on"] or L["off"]))
     RefreshPanel()
   elseif cmd == "lock" then
     KP_DB.locked = not KP_DB.locked
-    print(tag .. "panel " .. (KP_DB.locked and "locked" or "unlocked"))
+    print(tag .. L["floating panel"] .. " " .. (KP_DB.locked and L["locked"] or L["unlocked"]))
   elseif cmd == "reset" then
-    KP_DB.pos = nil
+    KP_DB.pos, KP_DB.scale = nil, nil
+    panel:SetScale(1)
     panel:ClearAllPoints(); panel:SetPoint("TOP", UIParent, "TOP", 0, -120)
+  elseif cmd == "minimap" then
+    KP_DB.minimap = KP_DB.minimap or {}
+    KP_DB.minimap.hide = not KP_DB.minimap.hide
+    if ns.RefreshMinimap then ns.RefreshMinimap() end
   elseif cmd == "tooltips" then
     KP_DB.tooltips = not KP_DB.tooltips
-    print(tag .. "tooltips " .. (KP_DB.tooltips and "on" or "off"))
-  elseif cmd == "config" or cmd == "options" or cmd == "settings" then
-    ns.OpenSettings()
-  elseif cmd == "progress" then
-    ns.ToggleHistory("progress")
-  elseif cmd == "next" then
-    ns.ToggleHistory("next")
-  elseif cmd == "runs" or cmd == "history" then
-    ns.ToggleHistory()
-  elseif cmd == "last" then
-    ns.ShowLastRun()
+    print(tag .. L["tooltips"] .. " " .. (KP_DB.tooltips and L["on"] or L["off"]))
   elseif cmd == "popup" then
     KP_DB.popup = (KP_DB.popup == false)
-    print(tag .. "end-of-key pop-up " .. (KP_DB.popup and "on" or "off"))
+    print(tag .. L["end-of-key pop-up"] .. " " .. (KP_DB.popup and L["on"] or L["off"]))
   elseif cmd == "region" then
     KP_DB.region = (arg ~= "" and arg ~= "auto") and arg or nil
     print(tag .. "region = " .. (GetRegion() or "?"))
     RefreshPanel()
   else
-    local score = GetScore("player") or 0
-    local rows = BuildRows(score)
-    print(tag .. string.format("|c%s%s|r", ScoreColor(score), Num(score)))
-    for _, row in ipairs(rows) do
-      print(string.format("  %s: %s  %s", row[1], PctText(row[2]), RankText(row[2], row[3])))
-    end
-    print("|cff888888/kp runs, progress, next, last, config|r")
+    print(tag .. "/kp, /kp runs, /kp progress, /kp goals, /kp last, /kp config, /kp panel, /kp minimap")
   end
 end

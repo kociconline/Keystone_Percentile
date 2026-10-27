@@ -90,6 +90,60 @@ def fetch_cohorts(season, region, category):
     return cohorts, data.get("updatedAt")
 
 
+# Extra brackets calculated from Raider.IO's daily score distribution, so goals
+# like "Top 2%" or "Top 20%" are exact instead of interpolated.
+DERIVED_PCTS = [0.05, 0.2, 0.3, 0.5, 0.75, 1.5, 2, 2.5, 3, 4, 6, 7, 8, 12, 15, 17.5, 20, 30, 35, 45, 50]
+COHORT_CATEGORY = {"overall": "overall", "dps": "roles", "healer": "roles", "tank": "roles",
+                   "melee": "roles", "ranged": "roles"}
+
+
+def cohort_category(key):
+    if key.startswith("spec:"):
+        return "specs"
+    if key.startswith("class:"):
+        return "classes"
+    return COHORT_CATEGORY.get(key)
+
+
+def distribution_points(season, region, key, population, official):
+    """Score at each DERIVED_PCTS bracket for one cohort, from today's score
+    histogram. Returns [] if the histogram is missing or disagrees with the
+    official cutoffs (then the addon keeps interpolating)."""
+    cat = cohort_category(key)
+    if not cat or not population:
+        return []
+    data = get("/mythic-plus/cutoff-analysis", season=season, region=region, category=cat,
+               cohort=key, percentiles=PERCENTILES)
+    days = ((data.get("chart") or {}).get("activeDensity")) or []
+    if not days:
+        return []
+    d = days[-1].get("density") or {}
+    size, first = d.get("bucketSize"), d.get("firstBucket")
+    counts = [c for c, rep in d.get("runs") or [] for _ in range(rep)]
+    if not counts or not size or first is None:
+        return []
+
+    def score_at(pct):
+        need, acc = population * pct / 100.0, 0
+        for i in range(len(counts) - 1, -1, -1):
+            acc += counts[i]
+            if acc >= need and counts[i]:
+                return first + i * size + size * (acc - need) / counts[i]
+        return None  # below the histogram's range
+
+    for p in official:  # must reproduce Raider.IO's own cutoffs
+        got = score_at(p["pct"])
+        if got is not None and abs(got - p["score"]) > 15:
+            print(f"    {key}: distribution doesn't match official cutoffs, skipped")
+            return []
+    out = []
+    for pct in DERIVED_PCTS:
+        v = score_at(pct)
+        if v is not None:
+            out.append({"pct": pct, "score": round(v, 1)})
+    return out
+
+
 def ascii_lower(s):
     return "".join(ch.lower() if ch.isascii() else ch for ch in s)
 
@@ -252,6 +306,8 @@ def main():
     ap.add_argument("--all-seasons", action="store_true", help="also import your runs from past seasons")
     ap.add_argument("--levels", default="10-20", help="--full only: key levels to benchmark")
     ap.add_argument("--wcl-budget", type=int, default=2500, help="max Warcraft Logs points to spend")
+    ap.add_argument("--no-distribution", action="store_true",
+                    help="--full only: skip the score distributions (exact extra brackets)")
     ap.add_argument("--debug", action="store_true")
     a = ap.parse_args()
     wcl.DEBUG = a.debug
@@ -277,6 +333,21 @@ def main():
                 except Exception as e:
                     print(f"  {r.upper()} {cat}: failed ({e})")
                 time.sleep(0.5)
+            if cohorts and not a.no_distribution:
+                added = 0
+                for key, c in cohorts.items():
+                    try:
+                        extra = distribution_points(slug, r, key, c.get("pop"), c["cutoffs"])
+                    except Exception as e:
+                        print(f"    {key}: distribution failed ({e})")
+                        extra = []
+                    if extra:
+                        have = {p["pct"] for p in c["cutoffs"]}
+                        c["cutoffs"] = sorted(c["cutoffs"] + [p for p in extra if p["pct"] not in have],
+                                              key=lambda p: p["pct"])
+                        added += 1
+                    time.sleep(0.3)
+                print(f"  {r.upper()}: exact brackets for {added}/{len(cohorts)} groups")
             if cohorts:
                 regions[r] = {"cohorts": cohorts, "sourceUpdated": updated}
                 for k, c in cohorts.items():

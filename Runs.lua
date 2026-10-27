@@ -170,15 +170,15 @@ local function BenchTable(source, map, specID)
 end
 
 function ns.Benchmark(map, specID, level)
-  -- Your personal benchmarks (fetched for your own dungeons) win over the shared ones.
-  local mine = BenchTable(KP_PERSONAL, map, specID)
-  if mine and level and mine[level] then return mine[level], level end
-  local t = BenchTable(KP_DATA, map, specID) or mine
-  if not t or not level then return nil end
-  if t[level] then return t[level], level end
-  for d = 1, 3 do
-    if t[level - d] then return t[level - d], level - d end
-    if t[level + d] then return t[level + d], level + d end
+  -- Exact level first, then the nearest level within 3; at each distance your
+  -- personal benchmarks (fetched for your own dungeons) win over the shared ones.
+  if not level then return nil end
+  local mine, shared = BenchTable(KP_PERSONAL, map, specID), BenchTable(KP_DATA, map, specID)
+  for d = 0, 3 do
+    for _, lv in ipairs(d == 0 and { level } or { level - d, level + d }) do
+      if mine and mine[lv] then return mine[lv], lv end
+      if shared and shared[lv] then return shared[lv], lv end
+    end
   end
 end
 
@@ -375,6 +375,7 @@ popup.sub = FS("GameFontDisableSmall")
 popup.why = FS("GameFontHighlightSmall")
 popup.groupTitle = FS("GameFontNormal")
 popup.footer = FS("GameFontDisableSmall")
+popup.goal = FS("GameFontHighlight")
 
 popup.barBG = popup:CreateTexture(nil, "ARTWORK")
 popup.barBG:SetColorTexture(0.17, 0.19, 0.23, 1)
@@ -592,6 +593,17 @@ function ns.ShowRunPopup(run)
   else
     foot = run.src == "logs" and L["Imported from Warcraft Logs"] or L["Recorded in game"]
   end
+  -- Your next goal, only for the key you just finished
+  local live = ns.LiveRuns()
+  local goal = (run.src == "live" and live[#live] == run and ns.GoalLine) and ns.GoalLine() or nil
+  if goal then
+    y = y - 10
+    popup.goal:SetText(goal); Place(popup.goal, PAD, y)
+    y = y - 16
+  else
+    popup.goal:Hide()
+  end
+
   popup.footer:SetText(foot)
   popup.footer:SetWidth(BAR_W - 70)
   y = y - 10
